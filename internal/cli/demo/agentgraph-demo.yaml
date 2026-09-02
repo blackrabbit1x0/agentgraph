@@ -1,0 +1,269 @@
+# AgentGraph demo environment (PRD sections 49-50)
+# A deliberately vulnerable simulated organization. Three agents share a
+# GitHub MCP that can write to production-triggering repositories.
+
+agents:
+  - id: finance-agent
+    name: Finance Agent
+    criticality: 60
+    metadata:
+      internet_access: true
+      requires_approval: false
+
+  - id: developer-agent
+    name: Developer Agent
+    criticality: 70
+    metadata:
+      internet_access: true
+      requires_approval: false
+
+  - id: support-agent
+    name: Customer Support Agent
+    criticality: 40
+    metadata:
+      internet_access: false
+      requires_approval: true
+
+  - id: calendar-assistant
+    name: Calendar Assistant
+    criticality: 10
+    metadata:
+      internet_access: false
+      requires_approval: true
+
+mcp_servers:
+  - id: github-mcp
+    name: GitHub MCP
+    metadata:
+      trust_level: high
+
+  - id: slack-mcp
+    name: Slack MCP
+    metadata:
+      trust_level: medium
+
+  - id: filesystem-mcp
+    name: Filesystem MCP
+    metadata:
+      trust_level: high
+
+identities:
+  - id: service-account-17
+    name: Finance Service Account
+    metadata:
+      privilege: write
+
+  - id: deploy-bot
+    name: CI Deploy Bot
+    metadata:
+      privilege: admin
+
+secrets:
+  - id: aws-deploy-token
+    name: AWS Deploy Token
+    metadata:
+      type: aws_access_key
+      location: github-actions
+
+  - id: production-db-secret
+    name: Production Database Secret
+    metadata:
+      type: database_password
+      location: aws-secrets-manager
+
+  - id: payment-signing-key
+    name: Payment Signing Key
+    metadata:
+      type: signing_key
+      location: aws-secrets-manager
+
+repositories:
+  - id: payments-repository
+    name: Payments Repository
+    criticality: 80
+    metadata:
+      environment: production
+
+  - id: internal-tools
+    name: Internal Tools Repository
+    criticality: 60
+    metadata:
+      environment: production
+
+ci_pipelines:
+  - id: production-ci
+    name: Production CI
+    criticality: 85
+    metadata:
+      environment: production
+
+cloud_roles:
+  - id: aws-deploy-role
+    name: AWS Production Deploy Role
+    provider: aws
+    criticality: 90
+    metadata:
+      privilege: admin
+      environment: production
+
+cloud_resources:
+  - id: production-s3
+    name: Production S3 Bucket
+    provider: aws
+    criticality: 70
+    metadata:
+      environment: production
+
+  - id: aws-secrets-manager
+    name: AWS Secrets Manager
+    provider: aws
+    criticality: 75
+    metadata:
+      environment: production
+
+databases:
+  - id: production-database
+    name: Production Database
+    criticality: 95
+    metadata:
+      environment: production
+      classification: customer_data
+
+  - id: customer-database
+    name: Customer Database
+    criticality: 90
+    metadata:
+      environment: production
+      classification: customer_data
+
+hosts:
+  - id: developer-workstation
+    name: Developer Workstation
+    criticality: 50
+
+apis:
+  - id: calendar-api
+    name: Calendar API
+    criticality: 15
+
+datasets:
+  - id: payroll-data
+    name: Payroll Dataset
+    criticality: 80
+
+  - id: calendar-events
+    name: Calendar Events
+    criticality: 10
+
+crown_jewels:
+  - production-database
+  - customer-database
+  - payment-signing-key
+  - payroll-data
+
+relationships:
+  # finance-agent: the PRD section 10 scenario
+  - source: finance-agent
+    target: github-mcp
+    type: USES
+
+  - source: finance-agent
+    target: slack-mcp
+    type: USES
+
+  - source: finance-agent
+    target: service-account-17
+    type: AUTHENTICATES_AS
+
+  - source: service-account-17
+    target: payroll-data
+    type: CAN_READ
+
+  - source: slack-mcp
+    target: calendar-events
+    type: CAN_WRITE
+    confidence: 0.6
+
+  - source: github-mcp
+    target: payments-repository
+    type: CAN_WRITE
+
+  - source: payments-repository
+    target: production-ci
+    type: TRIGGERS
+
+  - source: production-ci
+    target: aws-deploy-token
+    type: CONTAINS_SECRET
+
+  - source: production-ci
+    target: deploy-bot
+    type: AUTHENTICATES_AS
+
+  - source: aws-deploy-token
+    target: aws-deploy-role
+    type: AUTHENTICATES_AS
+
+  - source: deploy-bot
+    target: aws-deploy-role
+    type: CAN_ASSUME
+
+  - source: aws-deploy-role
+    target: aws-secrets-manager
+    type: CAN_ACCESS
+
+  - source: aws-deploy-role
+    target: customer-database
+    type: CAN_ADMIN
+
+  - source: aws-secrets-manager
+    target: production-db-secret
+    type: CONTAINS_SECRET
+
+  - source: aws-secrets-manager
+    target: payment-signing-key
+    type: CONTAINS_SECRET
+
+  - source: production-db-secret
+    target: production-database
+    type: AUTHENTICATES_AS
+
+  # developer-agent: shares the GitHub MCP choke point
+  - source: developer-agent
+    target: github-mcp
+    type: USES
+
+  - source: github-mcp
+    target: internal-tools
+    type: CAN_WRITE
+
+  - source: internal-tools
+    target: production-ci
+    type: TRIGGERS
+
+  - source: developer-agent
+    target: filesystem-mcp
+    type: USES
+
+  - source: filesystem-mcp
+    target: developer-workstation
+    type: CAN_WRITE
+
+  # support-agent: read-mostly, approval required
+  - source: support-agent
+    target: github-mcp
+    type: USES
+    confidence: 0.7
+
+  - source: aws-deploy-role
+    target: production-s3
+    type: CAN_ACCESS
+
+  # calendar-assistant: low risk
+  - source: calendar-assistant
+    target: calendar-api
+    type: USES
+
+  - source: calendar-api
+    target: calendar-events
+    type: CAN_READ

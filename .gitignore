@@ -1,0 +1,37 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/agentgraph
+bin/
+dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local configuration (keep the committed example/demo files)
+*.local.yaml
+.env
+
+# Private PRD (kept local, never published)
+/AgentGraph.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
