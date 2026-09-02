@@ -82,6 +82,73 @@ Then explore:
 ./agentgraph demo chokepoints
 ```
 
+## Live discovery: GitHub and AWS connectors
+
+Connectors discover real infrastructure and merge it with your YAML
+configuration. Node IDs are stable and referenceable — a YAML relationship
+can point at `github:repo:org/repo` or `aws:role:arn:aws:iam::123:role/deploy`
+before the connector even runs.
+
+**GitHub** (read-only token, `GITHUB_TOKEN` or `--token`):
+
+```bash
+./agentgraph scan github --owner my-org --save graph.json
+```
+
+Discovers repositories (with your effective permissions: CAN_READ /
+CAN_WRITE / CAN_ADMIN), Actions workflows, and Actions secret **metadata**
+(names only — values are never fetched or stored).
+
+**AWS** (default credential chain, read-only principal recommended):
+
+```bash
+./agentgraph scan aws --save graph.json
+```
+
+Discovers IAM roles and their **trust chains** (who can assume what,
+including external accounts and wildcard trusts), IAM users, Secrets
+Manager secret names, S3 buckets, RDS instances, and Lambda execution
+roles.
+
+**Combine everything:**
+
+```bash
+./agentgraph scan github aws --save graph.json
+```
+
+Then analyze or serve the saved graph:
+
+```bash
+./agentgraph --graph graph.json paths --from my-agent
+./agentgraph --graph graph.json blast-radius my-agent
+./agentgraph serve --graph graph.json
+```
+
+## Web dashboard
+
+```bash
+./agentgraph serve                    # from agentgraph.yaml
+./agentgraph serve --graph graph.json # from a saved scan
+```
+
+Opens an interactive Cytoscape.js graph at http://127.0.0.1:8080 with:
+
+- Node types color-coded, crown jewels in gold, dangerous edges
+  (CAN_ADMIN / CAN_EXECUTE) highlighted in red
+- Click an agent for its blast radius, crown jewels at risk, and a
+  one-click remediation recommendation
+- Click any path to highlight it across the graph
+
+REST API (same data the dashboard uses):
+
+```text
+GET /api/v1/graph
+GET /api/v1/agents
+GET /api/v1/agents/{id}/blast-radius
+GET /api/v1/agents/{id}/remediations
+GET /api/v1/paths?from=agent&to=target&crown_jewels=true
+```
+
 ## Model your own environment
 
 ```bash
@@ -154,6 +221,8 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 |---|---|
 | `agentgraph init` | Create a starter `agentgraph.yaml` |
 | `agentgraph scan` | Load config and print the security dashboard |
+| `agentgraph scan [github\|aws]` | Load config and/or run connectors |
+| `agentgraph serve` | Web dashboard + REST API |
 | `agentgraph agents` | List agents with tool/path/risk summaries |
 | `agentgraph paths [--from A] [--to B] [--crown-jewels]` | Enumerate attack paths |
 | `agentgraph path shortest --from A --to B` | Shortest attack path |
@@ -167,20 +236,21 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 ## How it works
 
 ```text
-Connectors (YAML today; GitHub / MCP / AWS planned)
+Connectors (YAML static, GitHub, AWS)
         │
         ▼
-Normalization (nodes + edges, secret redaction)
+Normalization (nodes + edges, secret redaction, assembler merge)
         │
         ▼
-Graph Store (in-memory; Neo4j planned)
+Graph Store (in-memory; snapshots via --save/--graph)
         │
         ├── Paths Engine     depth-limited enumeration, cycle prevention,
         │                    confidence filtering, BFS shortest path
         ├── Risk Engine      explainable 0–100 scoring per path
         ├── Blast Radius     direct/indirect reach, crown jewels,
         │                    highest privilege, exposure score
-        └── Remediation      edge-removal optimizer, choke-point analysis
+        ├── Remediation      edge-removal optimizer, choke-point analysis
+        └── API / Web        REST endpoints, Cytoscape.js dashboard
 ```
 
 **Key properties**
@@ -229,24 +299,28 @@ Or plain Go: `go build ./cmd/agentgraph`, `go test ./...`
 ### Repository layout
 
 ```text
-cmd/agentgraph/       CLI entry point
-internal/graph/       node/edge model + in-memory graph store
-internal/paths/       path enumeration + shortest path
-internal/risk/        explainable risk scoring
-internal/blast/       blast-radius + agent exposure analysis
-internal/remediation/ remediation optimizer + choke points
-internal/config/      YAML static connector (secret redaction)
-internal/cli/         CLI commands + embedded demo environment
+cmd/agentgraph/            CLI entry point
+internal/graph/            node/edge model, store, assembler, snapshots
+internal/paths/            path enumeration + shortest path
+internal/risk/             explainable risk scoring
+internal/blast/            blast-radius + agent exposure analysis
+internal/remediation/      remediation optimizer + choke points
+internal/config/           YAML static connector (secret redaction)
+internal/connectors/       GitHub + AWS live discovery connectors
+internal/api/              REST API + embedded web dashboard
+internal/cli/              CLI commands + embedded demo environment
 ```
 
 ## Roadmap
 
-- **Phase 0 — Graph prototype** ✅ (this release: model, import, paths,
-  blast radius, risk, remediation, choke points, CLI, demo)
-- **Phase 1** — live GitHub + MCP connectors, basic web visualization
-- **Phase 2** — AWS connector (IAM roles, Secrets Manager, EC2, RDS, S3)
+- **Phase 0 — Graph prototype** ✅ (model, import, paths, blast radius,
+  risk, remediation, choke points, CLI, demo)
+- **Phase 1 — MVP** ✅ (GitHub connector, web dashboard + REST API,
+  graph snapshots)
+- **Phase 2 — Cloud paths** ✅ (AWS connector: IAM trust chains, Secrets
+  Manager, S3, RDS, Lambda)
 - **Phase 3** — minimum-cut remediation, least-privilege suggestions
-- **Phase 4** — graph snapshots, drift, historical diff
+- **Phase 4** — graph snapshots history, drift, historical diff
 - **Phase 5** — Entra ID, Kubernetes, GitLab, Slack, Active Directory
 
 ## Contributing

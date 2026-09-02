@@ -28,6 +28,7 @@ repositories which trigger production CI.`,
 			for _, w := range warnings {
 				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 			}
+			maybeSaveGraph(g)
 			printDashboard(g)
 			fmt.Println()
 			fmt.Println("Try:")

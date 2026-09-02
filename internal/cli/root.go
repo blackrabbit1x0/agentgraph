@@ -14,7 +14,11 @@ import (
 // DefaultConfigFile is the conventional project configuration filename.
 const DefaultConfigFile = "agentgraph.yaml"
 
-var cfgFile string
+var (
+	cfgFile   string
+	graphFile string
+	savePath  string
+)
 
 // NewRootCommand builds the agentgraph CLI.
 func NewRootCommand() *cobra.Command {
@@ -26,8 +30,13 @@ CI/CD and cloud infrastructure connect - and determines what an attacker
 could reach if an agent is compromised.`,
 		SilenceUsage: true,
 	}
-	root.PersistentFlags().StringVar(&cfgFile, "config", DefaultConfigFile,
+	pf := root.PersistentFlags()
+	pf.StringVar(&cfgFile, "config", DefaultConfigFile,
 		"path to the agentgraph configuration file")
+	pf.StringVar(&graphFile, "graph", "",
+		"path to a saved graph snapshot (graph.json) instead of YAML")
+	pf.StringVar(&savePath, "save", "",
+		"save the analyzed graph to a snapshot file (graph.json)")
 
 	root.AddCommand(
 		newInitCommand(),
@@ -39,14 +48,24 @@ could reach if an agent is compromised.`,
 		newRemediateCommand(),
 		newChokePointsCommand(),
 		newExportCommand(),
+		newServeCommand(),
 		newDemoCommand(),
 	)
 	return root
 }
 
-// loadGraph loads the configured graph, exiting on failure. Warnings are
+// loadGraph loads the graph the CLI should operate on: a saved snapshot
+// when --graph is set, otherwise the YAML configuration. Warnings are
 // printed to stderr.
 func loadGraph() (*graph.Graph, []string) {
+	if graphFile != "" {
+		g, err := graph.LoadSnapshotFile(graphFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return g, nil
+	}
 	g, warnings, err := config.Load(cfgFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

@@ -79,58 +79,37 @@ func Load(path string) (*graph.Graph, []string, error) {
 	return LoadFromBytes(data)
 }
 
-// LoadFromBytes parses and validates configuration data.
+// LoadFromBytes parses and validates configuration data into a graph.
 func LoadFromBytes(data []byte) (*graph.Graph, []string, error) {
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, nil, fmt.Errorf("parse config: %w", err)
+	cfg, err := Parse(data)
+	if err != nil {
+		return nil, nil, err
 	}
-	return Build(&cfg)
+	return Build(cfg)
 }
 
-// Build constructs a graph from a parsed configuration.
+// Parse parses configuration data without building a graph. Use with
+// Assemble to merge configuration into a larger graph with connectors.
+func Parse(data []byte) (*Config, error) {
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &cfg, nil
+}
+
+// Build constructs a graph from a parsed configuration. Crown jewels must
+// reference nodes declared within this configuration.
 func Build(cfg *Config) (*graph.Graph, []string, error) {
-	g := graph.New()
+	asm := graph.NewAssembler()
 	var warnings []string
-
-	sections := []struct {
-		defs     []NodeDef
-		nodeType graph.NodeType
-	}{
-		{cfg.Agents, graph.NodeAIAgent},
-		{cfg.MCPServers, graph.NodeMCPServer},
-		{cfg.Tools, graph.NodeTool},
-		{cfg.Identities, graph.NodeIdentity},
-		{cfg.Secrets, graph.NodeSecret},
-		{cfg.Repositories, graph.NodeRepository},
-		{cfg.CIPipelines, graph.NodeCIPipeline},
-		{cfg.CloudRoles, graph.NodeCloudRole},
-		{cfg.CloudResources, graph.NodeCloudResource},
-		{cfg.Databases, graph.NodeDatabase},
-		{cfg.Hosts, graph.NodeHost},
-		{cfg.APIs, graph.NodeAPI},
-		{cfg.Datasets, graph.NodeDataset},
+	if err := cfg.feedAssembler(asm, &warnings); err != nil {
+		return nil, nil, err
 	}
-
-	for _, sec := range sections {
-		for _, def := range sec.defs {
-			if err := addNode(g, def, sec.nodeType, &warnings); err != nil {
-				return nil, nil, err
-			}
-		}
+	g, err := asm.Build()
+	if err != nil {
+		return nil, nil, err
 	}
-
-	for _, def := range cfg.Nodes {
-		if def.Type == "" {
-			return nil, nil, fmt.Errorf("node %q in nodes section is missing a type", def.ID)
-		}
-		t := graph.NodeType(strings.ToUpper(def.Type))
-		if err := addNode(g, def, t, &warnings); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Crown-jewel designation by ID.
 	for _, id := range cfg.CrownJewels {
 		n, ok := g.Node(id)
 		if !ok {
@@ -138,10 +117,53 @@ func Build(cfg *Config) (*graph.Graph, []string, error) {
 		}
 		n.CrownJewel = true
 	}
+	return g, warnings, nil
+}
 
-	edges := cfg.Relationships
+// feedAssembler adds all config nodes and relationships to the assembler
+// without applying crown-jewel flags, so connector discoveries can be
+// merged before flags are resolved.
+func (c *Config) feedAssembler(asm *graph.Assembler, warnings *[]string) error {
+	sections := []struct {
+		defs     []NodeDef
+		nodeType graph.NodeType
+	}{
+		{c.Agents, graph.NodeAIAgent},
+		{c.MCPServers, graph.NodeMCPServer},
+		{c.Tools, graph.NodeTool},
+		{c.Identities, graph.NodeIdentity},
+		{c.Secrets, graph.NodeSecret},
+		{c.Repositories, graph.NodeRepository},
+		{c.CIPipelines, graph.NodeCIPipeline},
+		{c.CloudRoles, graph.NodeCloudRole},
+		{c.CloudResources, graph.NodeCloudResource},
+		{c.Databases, graph.NodeDatabase},
+		{c.Hosts, graph.NodeHost},
+		{c.APIs, graph.NodeAPI},
+		{c.Datasets, graph.NodeDataset},
+	}
+
+	for _, sec := range sections {
+		for _, def := range sec.defs {
+			if err := addNode(asm, def, sec.nodeType, warnings); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, def := range c.Nodes {
+		if def.Type == "" {
+			return fmt.Errorf("node %q in nodes section is missing a type", def.ID)
+		}
+		t := graph.NodeType(strings.ToUpper(def.Type))
+		if err := addNode(asm, def, t, warnings); err != nil {
+			return err
+		}
+	}
+
+	edges := c.Relationships
 	if len(edges) == 0 {
-		edges = cfg.Edges
+		edges = c.Edges
 	}
 	for _, ed := range edges {
 		e := &graph.Edge{
@@ -157,21 +179,30 @@ func Build(cfg *Config) (*graph.Graph, []string, error) {
 			},
 		}
 		if ed.Type == "" {
-			return nil, nil, fmt.Errorf("relationship %s -> %s is missing a type", ed.Source, ed.Target)
+			return fmt.Errorf("relationship %s -> %s is missing a type", ed.Source, ed.Target)
 		}
 		e.Type = graph.EdgeType(strings.ToUpper(ed.Type))
 		if e.Confidence == 0 {
 			e.Confidence = 1.0
 		}
-		if err := g.AddEdge(e); err != nil {
-			return nil, nil, fmt.Errorf("relationship %s -> %s: %w", ed.Source, ed.Target, err)
-		}
+		asm.AddEdge(e)
 	}
-
-	return g, warnings, nil
+	return nil
 }
 
-func addNode(g *graph.Graph, def NodeDef, t graph.NodeType, warnings *[]string) error {
+// Assemble feeds the parsed configuration into an external assembler so
+// connector discoveries can be merged into the same graph. Crown-jewel IDs
+// are returned for the caller to apply once the merged graph is built,
+// because they may reference connector-discovered nodes.
+func (c *Config) Assemble(asm *graph.Assembler) ([]string, []string, error) {
+	var warnings []string
+	if err := c.feedAssembler(asm, &warnings); err != nil {
+		return nil, nil, err
+	}
+	return c.CrownJewels, warnings, nil
+}
+
+func addNode(asm *graph.Assembler, def NodeDef, t graph.NodeType, warnings *[]string) error {
 	if def.ID == "" {
 		return fmt.Errorf("%s section contains a node without an id", t)
 	}
@@ -203,7 +234,7 @@ func addNode(g *graph.Graph, def NodeDef, t graph.NodeType, warnings *[]string) 
 	if n.Name == "" {
 		n.Name = def.ID
 	}
-	if err := g.AddNode(n); err != nil {
+	if err := asm.AddNode(n); err != nil {
 		return fmt.Errorf("%s node: %w", t, err)
 	}
 	return nil

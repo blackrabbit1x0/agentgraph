@@ -1,50 +1,233 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"os"
 
+	"github.com/blackrabbit1x0/agentgraph/internal/config"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/aws"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/github"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
 	"github.com/blackrabbit1x0/agentgraph/internal/remediation"
+	gh "github.com/google/go-github/v74/github"
 	"github.com/spf13/cobra"
 )
 
-// pathOptionsFromFlags builds path enumeration options from CLI flags.
-type pathFlags struct {
-	from        string
-	to          string
-	crownJewels bool
-	maxDepth    int
-	minConf     float64
-}
-
-func (f *pathFlags) options() paths.Options {
-	return paths.Options{
-		MaxDepth:        f.maxDepth,
-		MinConfidence:   f.minConf,
-		TargetID:        "",
-		TargetSubstring: f.to,
-		CrownJewelsOnly: f.crownJewels,
-	}
-}
-
-func addPathFlags(cmd *cobra.Command, f *pathFlags) {
-	cmd.Flags().StringVar(&f.from, "from", "", "source agent ID")
-	cmd.Flags().StringVar(&f.to, "to", "", "target node ID or name substring")
-	cmd.Flags().BoolVar(&f.crownJewels, "crown-jewels", false, "only paths ending at crown jewels")
-	cmd.Flags().IntVar(&f.maxDepth, "max-depth", paths.DefaultMaxDepth, "maximum path depth (hops)")
-	cmd.Flags().Float64Var(&f.minConf, "min-confidence", 0, "minimum edge confidence (0-1)")
-}
+// graphFile and savePath are wired in root.go.
 
 func newScanCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "scan",
-		Short: "Load the configuration and print a security dashboard",
+	cmd := &cobra.Command{
+		Use:   "scan [connector...]",
+		Short: "Load configuration and/or run connectors, then print a security dashboard",
+		Long: `Load configuration and/or run connectors, then print a security dashboard.
+
+Without arguments, scans the local configuration only.
+Available connectors: github, aws.
+
+Examples:
+  agentgraph scan
+  agentgraph scan github
+  agentgraph scan github aws --save graph.json
+  agentgraph scan --graph graph.json    # analyze a previously saved graph`,
 		Run: func(cmd *cobra.Command, args []string) {
-			g, _ := loadGraph()
+			g := runScan(args)
 			printDashboard(g)
 		},
 	}
+	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand())
+	return cmd
+}
+
+func newScanGithubCommand() *cobra.Command {
+	var token, owner string
+	var includeForks bool
+	var maxRepos int
+
+	cmd := &cobra.Command{
+		Use:   "github",
+		Short: "Discover GitHub repositories, workflows, and secrets metadata",
+		Long: `Discover GitHub repositories, workflows, and secrets metadata
+using a read-only token (GITHUB_TOKEN environment variable or --token).
+
+Requires a token with repo scope (read-only fine-grained tokens work).
+Discovering Actions secrets additionally requires the secrets read scope.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if token == "" {
+				token = os.Getenv("GITHUB_TOKEN")
+			}
+			if token == "" {
+				fmt.Println("error: GitHub token required (set GITHUB_TOKEN or pass --token)")
+				os.Exit(1)
+			}
+			client := gh.NewClient(nil).WithAuthToken(token)
+			c := github.New(github.Options{
+				Client:       client,
+				Owner:        owner,
+				IncludeForks: includeForks,
+				MaxRepos:     maxRepos,
+			})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().StringVar(&token, "token", "", "GitHub personal access token (read-only)")
+	cmd.Flags().StringVar(&owner, "owner", "", "user or organization to scan (default: authenticated user)")
+	cmd.Flags().BoolVar(&includeForks, "include-forks", false, "include forked repositories")
+	cmd.Flags().IntVar(&maxRepos, "max-repos", 100, "maximum repositories to enumerate")
+	return cmd
+}
+
+func newScanAWSCommand() *cobra.Command {
+	var region string
+
+	cmd := &cobra.Command{
+		Use:   "aws",
+		Short: "Discover AWS IAM roles, trust chains, secrets, buckets, databases, functions",
+		Long: `Discover AWS infrastructure using the default credential chain
+(environment variables, shared credentials file, SSO, or instance profile).
+
+Uses read-only List/Get API calls only. Recommended: a read-only principal.
+
+Discovered node IDs (e.g. aws:role:arn:aws:iam::123:role/deploy) can be
+referenced from agentgraph.yaml relationships to connect agents to cloud.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			api, err := aws.LoadAPI(context.Background(), region)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			c := aws.New(aws.Options{API: api})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().StringVar(&region, "region", "", "AWS region (default: SDK resolution)")
+	return cmd
+}
+
+// runScan resolves the scan source: snapshot, connectors, or local config.
+func runScan(args []string) *graph.Graph {
+	var conns []connectors.Connector
+	for _, name := range args {
+		switch name {
+		case "github":
+			// Handled by the dedicated subcommand; here we require a token.
+			token := os.Getenv("GITHUB_TOKEN")
+			if token == "" {
+				fmt.Println("error: GITHUB_TOKEN not set (for full options run: agentgraph scan github)")
+				os.Exit(1)
+			}
+			client := gh.NewClient(nil).WithAuthToken(token)
+			conns = append(conns, github.New(github.Options{Client: client}))
+		case "aws":
+			api, err := aws.LoadAPI(context.Background(), "")
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			conns = append(conns, aws.New(aws.Options{API: api}))
+		default:
+			fmt.Printf("error: unknown connector %q (available: github, aws)\n", name)
+			os.Exit(1)
+		}
+	}
+	if len(conns) == 0 {
+		return runScanConnectors(nil)
+	}
+	return runScanConnectors(conns)
+}
+
+// runScanConnectors merges the YAML configuration (if present) with
+// connector discoveries, applies crown jewels, optionally saves the
+// merged graph, and returns it.
+func runScanConnectors(conns []connectors.Connector) *graph.Graph {
+	// Prefer a saved snapshot when --graph is set.
+	if graphFile != "" {
+		g, _ := loadGraph()
+		maybeSaveGraph(g)
+		return g
+	}
+
+	asm := graph.NewAssembler()
+	var crownJewels []string
+	var warnings []string
+
+	if fileExists(resolveConfigPath()) {
+		cfgData, err := os.ReadFile(resolveConfigPath())
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			os.Exit(1)
+		}
+		cfg, err := config.Parse(cfgData)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			os.Exit(1)
+		}
+		cj, warns, err := cfg.Assemble(asm)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			os.Exit(1)
+		}
+		crownJewels = cj
+		warnings = append(warnings, warns...)
+	}
+
+	ctx := context.Background()
+	for _, c := range conns {
+		res, err := c.Discover(ctx)
+		if err != nil {
+			fmt.Printf("error: connector %s: %v\n", c.Name(), err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "connector %s: %d nodes, %d relationships discovered\n",
+			c.Name(), len(res.Nodes), len(res.Edges))
+		for _, n := range res.Nodes {
+			if err := asm.AddNode(n); err != nil {
+				fmt.Printf("error: connector %s: %v\n", c.Name(), err)
+				os.Exit(1)
+			}
+		}
+		for _, e := range res.Edges {
+			asm.AddEdge(e)
+		}
+	}
+
+	g, err := asm.Build()
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		os.Exit(1)
+	}
+
+	for _, id := range crownJewels {
+		n, ok := g.Node(id)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: crown jewel %q was not discovered by any source\n", id)
+			continue
+		}
+		n.CrownJewel = true
+	}
+
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
+
+	maybeSaveGraph(g)
+	return g
+}
+
+func maybeSaveGraph(g *graph.Graph) {
+	if savePath == "" {
+		return
+	}
+	if err := graph.SaveSnapshotFile(g, savePath); err != nil {
+		fmt.Printf("error: save graph: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "saved graph snapshot to %s (%d nodes, %d edges)\n",
+		savePath, g.NodeCount(), g.EdgeCount())
 }
 
 func printDashboard(g *graph.Graph) {

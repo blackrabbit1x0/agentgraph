@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/blackrabbit1x0/agentgraph/internal/graph"
 )
 
 const goodConfig = `
@@ -201,13 +203,67 @@ func TestDuplicateNodeRejected(t *testing.T) {
 	cfg := `
 agents:
   - id: a
-agents_extra: []
 nodes:
   - id: a
     type: host
 `
 	_, _, err := LoadFromBytes([]byte(cfg))
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("expected duplicate-ID error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "conflicting types") {
+		t.Fatalf("expected conflicting-types error, got %v", err)
+	}
+}
+
+func TestMergeEnrichesExistingNode(t *testing.T) {
+	// The assembler merge path: re-registering the same ID with the same
+	// type enriches metadata instead of failing.
+	g := graph.New()
+	if err := g.AddNode(&graph.Node{ID: "a", Type: graph.NodeAIAgent, Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = g
+	asm := graph.NewAssembler()
+	if err := asm.AddNode(&graph.Node{ID: "a", Type: graph.NodeAIAgent, Name: "Agent One", Criticality: 50}); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+	if err := asm.AddNode(&graph.Node{ID: "a", Type: graph.NodeAIAgent, Metadata: map[string]any{"owner": "sec-team"}}); err != nil {
+		t.Fatalf("merge add: %v", err)
+	}
+	built, err := asm.Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	n, _ := built.Node("a")
+	if n.Name != "Agent One" || n.Criticality != 50 || n.Metadata["owner"] != "sec-team" {
+		t.Fatalf("merge did not enrich node: %+v", n)
+	}
+}
+
+func TestDeferredEdgeResolution(t *testing.T) {
+	// A config may declare an edge whose endpoints a connector discovers
+	// later; the assembler validates at Build time, not AddEdge time.
+	asm := graph.NewAssembler()
+	asm.AddEdge(&graph.Edge{Source: "agent", Target: "github:repo:org/repo", Type: graph.EdgeCanWrite, Confidence: 1})
+	asm.AddEdge(&graph.Edge{Source: "agent", Target: "missing-node", Type: graph.EdgeUses, Confidence: 1})
+
+	if err := asm.AddNode(&graph.Node{ID: "agent", Type: graph.NodeAIAgent, Name: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := asm.Build(); err == nil {
+		t.Fatal("expected error for unresolved edge endpoint")
+	}
+
+	if err := asm.AddNode(&graph.Node{ID: "github:repo:org/repo", Type: graph.NodeRepository, Name: "repo"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := asm.AddNode(&graph.Node{ID: "missing-node", Type: graph.NodeRepository, Name: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := asm.Build()
+	if err != nil {
+		t.Fatalf("build after resolution: %v", err)
+	}
+	if g.EdgeCount() != 2 {
+		t.Fatalf("expected 2 edges, got %d", g.EdgeCount())
 	}
 }
