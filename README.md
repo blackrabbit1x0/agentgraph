@@ -257,4 +257,4 @@ graph engine.
 
 ## License
 
-TBD
+[MIT](LICENSE)
