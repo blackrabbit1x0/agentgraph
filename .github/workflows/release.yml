@@ -32,11 +32,13 @@ jobs:
             os="${target%/*}"
             arch="${target#*/}"
             name="agentgraph-${os}-${arch}"
-            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
-              -o "dist/${name}" ./cmd/agentgraph
             if [ "$os" = "windows" ]; then
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+                -o "dist/${name}.exe" ./cmd/agentgraph
               (cd dist && zip -q "${name}.zip" "${name}.exe" && rm "${name}.exe")
             else
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+                -o "dist/${name}" ./cmd/agentgraph
               tar -C dist -czf "dist/${name}.tar.gz" "${name}" && rm "dist/${name}"
             fi
           done
