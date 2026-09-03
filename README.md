@@ -318,7 +318,11 @@ Prebuilt binaries: [releases](https://github.com/blackrabbit1x0/agentgraph/relea
 for Linux, macOS, and Windows.
 
 ```bash
-# macOS / Linux
+# macOS / Linux (Homebrew)
+brew tap blackrabbit1x0/tap
+brew install agentgraph
+
+# macOS / Linux (script)
 curl -fsSL https://raw.githubusercontent.com/blackrabbit1x0/agentgraph/main/install.sh | sh
 
 # Docker (demo environment on http://localhost:8080)
