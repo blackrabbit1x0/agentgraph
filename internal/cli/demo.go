@@ -46,6 +46,8 @@ repositories which trigger production CI.`,
 		demoSub("explain", newExplainCommand()),
 		demoSub("remediate", newRemediateCommand()),
 		demoSub("chokepoints", newChokePointsCommand()),
+		demoSub("mincut", newMincutCommand()),
+		demoSub("policy", newPolicyCommand()),
 		demoSub("export", newExportCommand()),
 	)
 	return cmd

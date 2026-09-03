@@ -9,6 +9,7 @@ import (
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/aws"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/github"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/mcp"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
 	"github.com/blackrabbit1x0/agentgraph/internal/remediation"
@@ -18,6 +19,35 @@ import (
 
 // graphFile and savePath are wired in root.go.
 
+func newScanMCPCommand() *cobra.Command {
+	var live bool
+	var timeout int
+
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Discover MCP servers and tools from local AI-client configurations",
+		Long: `Discover MCP servers and tools from local AI-client
+configurations: Claude Desktop, Cursor, VS Code, opencode, and generic
+.mcp.json files.
+
+stdio servers are never spawned - only their configuration is read.
+Environment variable names are recorded; values are never stored.
+URLs are redacted of sensitive query parameters.
+
+With --live, HTTP/SSE servers are queried via the MCP protocol
+(initialize -> tools/list) to inventory their tools. No tool is ever
+called.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			c := mcp.New(mcp.Options{Live: live, TimeoutSeconds: timeout})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().BoolVar(&live, "live", false, "query HTTP/SSE servers for their tool lists")
+	cmd.Flags().IntVar(&timeout, "timeout", 5, "per-server timeout for live queries (seconds)")
+	return cmd
+}
+
 func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [connector...]",
@@ -25,19 +55,19 @@ func newScanCommand() *cobra.Command {
 		Long: `Load configuration and/or run connectors, then print a security dashboard.
 
 Without arguments, scans the local configuration only.
-Available connectors: github, aws.
+Available connectors: github, aws, mcp.
 
 Examples:
   agentgraph scan
   agentgraph scan github
-  agentgraph scan github aws --save graph.json
+  agentgraph scan github aws mcp --save graph.json
   agentgraph scan --graph graph.json    # analyze a previously saved graph`,
 		Run: func(cmd *cobra.Command, args []string) {
 			g := runScan(args)
 			printDashboard(g)
 		},
 	}
-	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand())
+	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand(), newScanMCPCommand())
 	return cmd
 }
 
@@ -129,6 +159,8 @@ func runScan(args []string) *graph.Graph {
 				os.Exit(1)
 			}
 			conns = append(conns, aws.New(aws.Options{API: api}))
+		case "mcp":
+			conns = append(conns, mcp.New(mcp.Options{}))
 		default:
 			fmt.Printf("error: unknown connector %q (available: github, aws)\n", name)
 			os.Exit(1)

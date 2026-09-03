@@ -110,10 +110,23 @@ including external accounts and wildcard trusts), IAM users, Secrets
 Manager secret names, S3 buckets, RDS instances, and Lambda execution
 roles.
 
+**MCP** (local configuration discovery — no credentials needed):
+
+```bash
+./agentgraph scan mcp --save graph.json
+./agentgraph scan mcp --live --save graph.json   # also list tools from HTTP servers
+```
+
+Discovers MCP servers from Claude Desktop, Cursor, VS Code, opencode, and
+generic `.mcp.json` configs. stdio servers are **never spawned**; env var
+names are recorded but values never stored; URLs are redacted of
+sensitive query parameters. With `--live`, HTTP/SSE servers are queried
+via the MCP protocol (initialize → tools/list) — **no tool is ever called**.
+
 **Combine everything:**
 
 ```bash
-./agentgraph scan github aws --save graph.json
+./agentgraph scan github aws mcp --save graph.json
 ```
 
 Then analyze or serve the saved graph:
@@ -123,6 +136,77 @@ Then analyze or serve the saved graph:
 ./agentgraph --graph graph.json blast-radius my-agent
 ./agentgraph serve --graph graph.json
 ```
+
+## Graph diff: what changed?
+
+```bash
+./agentgraph scan --save snapshot-old.json
+# ... infrastructure changes ...
+./agentgraph scan --save snapshot-new.json
+./agentgraph diff snapshot-old.json snapshot-new.json
+```
+
+Output:
+
+```text
+Relationships   +1 (1 added, 0 removed)
+Attack paths    +36 (36 new, 0 gone)
+
+NEW ATTACK PATHS
+
+  support-agent --CAN_ADMIN--> github-mcp --CAN_WRITE--> payments-repository
+    --TRIGGERS--> production-ci --CAN_ASSUME--> aws-deploy-role
+    introduced by: support-agent --CAN_ADMIN--> github-mcp
+```
+
+Every new attack path is attributed to the relationship that introduced it.
+
+## Minimum cut: sever the blast radius
+
+```bash
+./agentgraph mincut --agent finance-agent --to production-database
+./agentgraph mincut --agent finance-agent --all    # every reachable crown jewel
+```
+
+Max-flow (Edmonds-Karp) analysis finds the **minimum set of
+relationships** whose removal disconnects an agent from its targets —
+the smallest possible change with the biggest security impact.
+
+## Policy engine
+
+```bash
+./agentgraph policy                       # default rules
+./agentgraph policy --rules my-rules.yaml # custom rules
+```
+
+Default rules: agents must not reach production admin (critical),
+production environments (critical), or secrets (high). Custom rules:
+
+```yaml
+rules:
+  - id: AGENT-100
+    name: Agents must not reach payment infrastructure
+    severity: critical
+    when:
+      node_type: AI_AGENT
+    deny_reach:
+      has_any_tag: [payments, billing]
+      environment: production
+```
+
+Violations include the full path evidence for auditors.
+
+## SVG export
+
+```bash
+./agentgraph export --svg --out graph.svg
+./agentgraph export --svg --from finance-agent --out highlighted.svg
+```
+
+Standalone SVG image of the graph: agents on the left, targets on the
+right, crown jewels in gold, admin/execute edges in red, and (with
+`--from`) the agent's most dangerous path highlighted in blue. Drop it
+straight into a README, report, or slide deck.
 
 ## Web dashboard
 
@@ -221,8 +305,11 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 |---|---|
 | `agentgraph init` | Create a starter `agentgraph.yaml` |
 | `agentgraph scan` | Load config and print the security dashboard |
-| `agentgraph scan [github\|aws]` | Load config and/or run connectors |
+| `agentgraph scan [github\|aws\|mcp]` | Load config and/or run connectors |
 | `agentgraph serve` | Web dashboard + REST API |
+| `agentgraph diff <a> <b>` | Compare snapshots: new/removed attack paths |
+| `agentgraph mincut --agent A [--to B\|--all]` | Minimum relationship cut |
+| `agentgraph policy [--rules f]` | Evaluate policy rules |
 | `agentgraph agents` | List agents with tool/path/risk summaries |
 | `agentgraph paths [--from A] [--to B] [--crown-jewels]` | Enumerate attack paths |
 | `agentgraph path shortest --from A --to B` | Shortest attack path |
@@ -236,7 +323,7 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 ## How it works
 
 ```text
-Connectors (YAML static, GitHub, AWS)
+Connectors (YAML static, GitHub, AWS, MCP)
         │
         ▼
 Normalization (nodes + edges, secret redaction, assembler merge)
@@ -249,8 +336,11 @@ Graph Store (in-memory; snapshots via --save/--graph)
         ├── Risk Engine      explainable 0–100 scoring per path
         ├── Blast Radius     direct/indirect reach, crown jewels,
         │                    highest privilege, exposure score
-        ├── Remediation      edge-removal optimizer, choke-point analysis
-        └── API / Web        REST endpoints, Cytoscape.js dashboard
+        ├── Remediation      edge-removal optimizer, choke-point analysis,
+        │                    minimum cut (Edmonds-Karp)
+        ├── Policy Engine    default + custom YAML rules with evidence
+        ├── Diff Engine      snapshot comparison with path attribution
+        └── API / Web        REST endpoints, Cytoscape.js dashboard, SVG export
 ```
 
 **Key properties**
@@ -304,9 +394,12 @@ internal/graph/            node/edge model, store, assembler, snapshots
 internal/paths/            path enumeration + shortest path
 internal/risk/             explainable risk scoring
 internal/blast/            blast-radius + agent exposure analysis
-internal/remediation/      remediation optimizer + choke points
+internal/remediation/      remediation optimizer, choke points, min-cut
+internal/policy/           default + custom policy rules
+internal/diff/             snapshot comparison + path attribution
+internal/svg/              standalone SVG graph rendering
 internal/config/           YAML static connector (secret redaction)
-internal/connectors/       GitHub + AWS live discovery connectors
+internal/connectors/       GitHub + AWS + MCP live discovery connectors
 internal/api/              REST API + embedded web dashboard
 internal/cli/              CLI commands + embedded demo environment
 ```
@@ -315,12 +408,12 @@ internal/cli/              CLI commands + embedded demo environment
 
 - **Phase 0 — Graph prototype** ✅ (model, import, paths, blast radius,
   risk, remediation, choke points, CLI, demo)
-- **Phase 1 — MVP** ✅ (GitHub connector, web dashboard + REST API,
+- **Phase 1 — MVP** ✅ (GitHub + MCP connectors, web dashboard + REST API,
   graph snapshots)
 - **Phase 2 — Cloud paths** ✅ (AWS connector: IAM trust chains, Secrets
   Manager, S3, RDS, Lambda)
-- **Phase 3** — minimum-cut remediation, least-privilege suggestions
-- **Phase 4** — graph snapshots history, drift, historical diff
+- **Phase 3 — Remediation** ✅ (minimum-cut analysis, policy engine)
+- **Phase 4 — Historical graph** ✅ (snapshot diff with path attribution)
 - **Phase 5** — Entra ID, Kubernetes, GitLab, Slack, Active Directory
 
 ## Contributing
