@@ -2,8 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
+	"github.com/blackrabbit1x0/agentgraph/internal/risk"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +47,12 @@ Filter targets with --to (ID or name substring) or --crown-jewels.`,
 				fmt.Println("No attack paths found.")
 				return
 			}
+			// Order by expected threat: impact x likelihood (PRD 68).
+			sort.SliceStable(scored, func(i, j int) bool {
+				ei := risk.ExpectedThreat(scored[i].Risk.Score, risk.PathLikelihood(scored[i].Path.Edges()))
+				ej := risk.ExpectedThreat(scored[j].Risk.Score, risk.PathLikelihood(scored[j].Path.Edges()))
+				return ei > ej
+			})
 			for _, sp := range scored {
 				printScoredPath(sp)
 			}

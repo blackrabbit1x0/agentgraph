@@ -33,6 +33,7 @@ type EdgeDef struct {
 	Type         string         `yaml:"type"`
 	Confidence   float64        `yaml:"confidence"`
 	Risk         int            `yaml:"risk"`
+	Likelihood   *float64       `yaml:"likelihood"`
 	Metadata     map[string]any `yaml:"metadata"`
 	Connector    string         `yaml:"connector"`
 	SourceObject string         `yaml:"source_object"`
@@ -225,6 +226,17 @@ func (c *Config) feedAssembler(asm *graph.Assembler, warnings *[]string) error {
 		e.Type = graph.EdgeType(strings.ToUpper(ed.Type))
 		if e.Confidence == 0 {
 			e.Confidence = 1.0
+		}
+		// Configured likelihood override feeds probabilistic analysis
+		// (PRD 68); validated to (0, 1].
+		if ed.Likelihood != nil {
+			if *ed.Likelihood <= 0 || *ed.Likelihood > 1 {
+				return fmt.Errorf("relationship %s -> %s: likelihood must be in (0, 1]", ed.Source, ed.Target)
+			}
+			if e.Metadata == nil {
+				e.Metadata = map[string]any{}
+			}
+			e.Metadata["likelihood"] = *ed.Likelihood
 		}
 		// Edge metadata is subject to the same redaction as nodes.
 		for k := range ed.Metadata {

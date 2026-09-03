@@ -32,6 +32,7 @@ repositories which trigger production CI.`,
 				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 			}
 			maybeSaveGraph(g)
+			persistGraph(g)
 			printDashboard(g)
 			fmt.Println()
 			fmt.Println("Try:")

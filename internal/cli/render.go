@@ -41,8 +41,10 @@ func severityTag(sev string) string { return sev }
 
 // printScoredPath prints one scored path in summary form.
 func printScoredPath(sp *blast.ScoredPath) {
-	fmt.Printf("%s  %s  risk %3d  confidence %.2f  %d hops\n",
-		sp.Path.ID, sp.Risk.Severity, sp.Risk.Score, sp.Path.Confidence, sp.Path.Length())
+	p := risk.PathLikelihood(sp.Path.Edges())
+	fmt.Printf("%s  %s  risk %3d  conf %.2f  likelihood %.4f (%s)  %d hops\n",
+		sp.Path.ID, sp.Risk.Severity, sp.Risk.Score, sp.Path.Confidence, p,
+		risk.LikelihoodFor(p), sp.Path.Length())
 	fmt.Printf("  %s\n", renderPathArrow(sp.Path))
 }
 

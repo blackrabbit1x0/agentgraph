@@ -345,6 +345,7 @@ func runScanConnectors(conns []connectors.Connector) *graph.Graph {
 	}
 
 	maybeSaveGraph(g)
+	persistGraph(g)
 	return g
 }
 

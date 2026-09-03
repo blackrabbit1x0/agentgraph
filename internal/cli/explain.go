@@ -37,20 +37,24 @@ enumeration settings; run "agentgraph paths" to list them.`,
 
 			res := risk.ScorePath(target.Nodes(), target.Edges(), target.Confidence)
 			analysis := attack.AnalyzePath(target)
+			likelihood := risk.PathLikelihood(target.Edges())
 
 			fmt.Printf("%s exists because:\n\n", strings.ToUpper(target.ID))
-			nodes := target.Nodes()
 			edges := target.Edges()
 			for i, e := range edges {
-				fmt.Printf("%d. %s can reach %s via %s.\n", i+1, e.Source, e.Target, e.Type)
+				fmt.Printf("%d. %s can reach %s via %s (hop likelihood %.2f).\n",
+					i+1, e.Source, e.Target, e.Type, risk.EdgeLikelihood(e))
 			}
-			_ = nodes
 			fmt.Printf("\nTherefore:\n\n")
 			fmt.Printf("Compromise of %s may create a path to %s.\n",
 				target.Source.ID, target.Target.ID)
 
 			fmt.Printf("\nRisk: %d/100 (%s)\n", res.Score, res.Severity)
-			fmt.Printf("Confidence: %.2f\n\n", res.Confidence)
+			fmt.Printf("Confidence: %.2f\n", res.Confidence)
+			fmt.Printf("Likelihood: %.4f (%s) - probability an attacker traverses every hop\n",
+				likelihood, risk.LikelihoodFor(likelihood))
+			fmt.Printf("Expected threat: %d/100 (risk x likelihood)\n\n",
+				risk.ExpectedThreat(res.Score, likelihood))
 			fmt.Println("Score breakdown:")
 			risk.SortFactors(res.Factors)
 			for _, f := range res.Factors {

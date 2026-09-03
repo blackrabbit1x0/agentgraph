@@ -312,6 +312,58 @@ Agent attack techniques:
 ATT&CK tags and AGT classifications are included in JSON export. Not
 every relationship is forced into ATT&CK — only meaningful mappings.
 
+## Probabilistic attack paths
+
+Reachability says a path *can* be walked; likelihood estimates how
+*plausibly* it is. Every edge gets an exploitation probability derived
+from its risk (ease of abuse), attenuated by confidence (existence
+certainty), with optional YAML overrides:
+
+```yaml
+relationships:
+  - source: finance-agent
+    target: github-mcp
+    type: USES
+    likelihood: 0.9     # informed estimate, (0, 1]
+```
+
+Path likelihood is the product of its hops — long chains attenuate
+quickly, which is the point:
+
+```text
+PATH-0005  CRITICAL  risk  97  conf 1.00  likelihood 0.0580 (POSSIBLE)  6 hops
+```
+
+A 97/100-risk 6-hop path is only ~6% likely to be walked end-to-end;
+`agentgraph paths` orders results by **expected threat** (risk ×
+likelihood) so plausible medium-risk paths outrank implausible critical
+ones. `agentgraph explain` shows per-hop likelihood and the full
+breakdown.
+
+## Neo4j graph store
+
+Graphs persist as files by default (`--save graph.json`). For durable,
+Cypher-queryable storage, add `--store neo4j`:
+
+```bash
+# Run Neo4j (any 5.x):
+docker run -e NEO4J_AUTH=neo4j/yourpass -p 7687:7687 neo4j:5
+
+# Save and load snapshots:
+NEO4J_PASSWORD=yourpass agentgraph scan github --store neo4j --store-key prod
+NEO4J_PASSWORD=yourpass agentgraph blast-radius my-agent --store neo4j --store-key prod
+```
+
+Configuration via `NEO4J_URI` (default `neo4j://localhost:7687`),
+`NEO4J_USER` (default `neo4j`), `NEO4J_PASSWORD`. Snapshots are stored
+as `(:AgentGraphSnapshot {key})-[:CONTAINS]->(:AgentGraphNode)` with
+`EDGE` relationships, so your team can query them directly:
+
+```cypher
+MATCH (n:AgentGraphNode {snapKey: "prod", type: "SECRET"})<-[e:EDGE]-(src)
+RETURN n.name, src.id, e.type
+```
+
 ## Install
 
 Prebuilt binaries: [releases](https://github.com/blackrabbit1x0/agentgraph/releases)
@@ -519,7 +571,7 @@ Or plain Go: `go build ./cmd/agentgraph`, `go test ./...`
 cmd/agentgraph/            CLI entry point
 internal/graph/            node/edge model, store, assembler, snapshots
 internal/paths/            path enumeration + shortest path
-internal/risk/             explainable risk scoring
+internal/risk/             explainable risk scoring + path likelihood
 internal/blast/            blast-radius + agent exposure analysis
 internal/remediation/      remediation optimizer, choke points, min-cut
 internal/policy/           default + custom policy rules
@@ -527,7 +579,8 @@ internal/diff/             snapshot comparison + path attribution
 internal/runtime/          attack-path execution detection (events -> alerts)
 internal/attack/           MITRE ATT&CK + agent-attack taxonomy mapping
 internal/svg/              static + animated SVG graph rendering
-internal/config/           YAML static connector (secret redaction)
+internal/store/            graph persistence (memory, Neo4j)
+internal/config/           YAML static connector
 internal/connectors/       GitHub, GitLab, AWS, MCP, Kubernetes discovery
 internal/api/              REST API + embedded web dashboard
 internal/cli/              CLI commands + embedded demo environment
@@ -585,8 +638,10 @@ See [SECURITY.md](SECURITY.md) for the reporting policy.
 - **Phase 5 — Enterprise identity** 🚧 (Kubernetes + GitLab ✅; Entra ID,
   Slack, Okta, Vault next)
 - **Research — EDR for AI agents** 🚧 (runtime attack-path execution
-  detection: `agentgraph watch`; next: probabilistic paths, behavior
+  detection: `agentgraph watch`; probabilistic paths ✅; next: behavior
   graphs)
+- **Graph store** ✅ (in-memory default; Neo4j persistence via
+  `--store neo4j`, PRD 30)
 
 ## Contributing
 

@@ -37,6 +37,10 @@ could reach if an agent is compromised.`,
 		"path to a saved graph snapshot (graph.json) instead of YAML")
 	pf.StringVar(&savePath, "save", "",
 		"save the analyzed graph to a snapshot file (graph.json)")
+	pf.StringVar(&storeBackend, "store", "",
+		"graph store backend: neo4j (env: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)")
+	pf.StringVar(&storeKey, "store-key", "default",
+		"snapshot key in the graph store")
 
 	root.AddCommand(
 		newInitCommand(),
@@ -58,10 +62,15 @@ could reach if an agent is compromised.`,
 	return root
 }
 
-// loadGraph loads the graph the CLI should operate on: a saved snapshot
-// when --graph is set, otherwise the YAML configuration. Warnings are
-// printed to stderr.
+// loadGraph loads the graph the CLI should operate on: a graph store
+// (--store), a saved snapshot (--graph), or the YAML configuration, in
+// that order. Warnings are printed to stderr.
 func loadGraph() (*graph.Graph, []string) {
+	if storeBackend != "" {
+		if g := loadFromStore(); g != nil {
+			return g, nil
+		}
+	}
 	if graphFile != "" {
 		g, err := graph.LoadSnapshotFile(graphFile)
 		if err != nil {
