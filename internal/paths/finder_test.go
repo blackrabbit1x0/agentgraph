@@ -1,6 +1,7 @@
 package paths
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
@@ -217,5 +218,68 @@ func TestDeterministicIDs(t *testing.T) {
 		if a[i].ID != b[i].ID || Describe(a[i]) != Describe(b[i]) {
 			t.Fatalf("enumeration order/IDs differ at %d", i)
 		}
+	}
+}
+
+func TestEnumerateAllToleratesTruncation(t *testing.T) {
+	// Regression: EnumerateAll must keep partial results when an agent's
+	// enumeration hits the MaxPaths cap, instead of discarding everything.
+	g := graph.New()
+	// Two agents sharing a rich fan-out graph: agent A hits the cap,
+	// agent B must still contribute paths.
+	nodes := []*graph.Node{
+		{ID: "A", Type: graph.NodeAIAgent, Name: "A"},
+		{ID: "B", Type: graph.NodeAIAgent, Name: "B"},
+		{ID: "M", Type: graph.NodeMCPServer, Name: "M"},
+	}
+	// Enough targets that MaxPaths:5 truncates A.
+	for i := 0; i < 8; i++ {
+		nodes = append(nodes, &graph.Node{
+			ID: fmt.Sprintf("t%d", i), Type: graph.NodeRepository, Name: fmt.Sprintf("t%d", i),
+		})
+	}
+	for _, n := range nodes {
+		if err := g.AddNode(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := g.AddEdge(&graph.Edge{Source: "A", Target: "M", Type: graph.EdgeUses, Confidence: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.AddEdge(&graph.Edge{Source: "B", Target: "M", Type: graph.EdgeUses, Confidence: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("t%d", i)
+		if err := g.AddEdge(&graph.Edge{Source: "M", Target: id, Type: graph.EdgeCanWrite, Confidence: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := EnumerateAll(g, Options{MaxPaths: 5})
+	if err == nil {
+		t.Fatal("expected TruncatedError when MaxPaths is exceeded")
+	}
+	if _, ok := err.(*TruncatedError); !ok {
+		t.Fatalf("expected *TruncatedError, got %T", err)
+	}
+	// Both agents' partial results must be present (5 each = 10 total).
+	if len(all) != 10 {
+		t.Fatalf("expected 10 partial paths across both agents, got %d", len(all))
+	}
+	byAgent := map[string]int{}
+	for _, p := range all {
+		byAgent[p.Source.ID]++
+	}
+	if byAgent["A"] != 5 || byAgent["B"] != 5 {
+		t.Fatalf("truncation must not starve later agents: %v", byAgent)
+	}
+	// IDs are globally unique and sequential.
+	ids := map[string]bool{}
+	for _, p := range all {
+		if ids[p.ID] {
+			t.Fatalf("duplicate path ID %s", p.ID)
+		}
+		ids[p.ID] = true
 	}
 }

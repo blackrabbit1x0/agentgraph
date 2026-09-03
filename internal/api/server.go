@@ -18,11 +18,19 @@ import (
 type Server struct {
 	graph *graph.Graph
 	mux   *http.ServeMux
+	// hub is optional; set when runtime detection is enabled.
+	hub *AlertHub
 }
 
 // NewServer builds the server for a graph.
 func NewServer(g *graph.Graph) *Server {
-	s := &Server{graph: g, mux: http.NewServeMux()}
+	return NewServerWithAlerts(g, nil)
+}
+
+// NewServerWithAlerts builds the server with a runtime-detection alert
+// hub (enables the /api/v1/alerts endpoints).
+func NewServerWithAlerts(g *graph.Graph, hub *AlertHub) *Server {
+	s := &Server{graph: g, mux: http.NewServeMux(), hub: hub}
 	s.routes()
 	return s
 }
@@ -37,6 +45,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/agents/{id}/blast-radius", s.handleBlastRadius)
 	s.mux.HandleFunc("GET /api/v1/agents/{id}/remediations", s.handleRemediations)
 	s.mux.HandleFunc("GET /api/v1/paths", s.handlePaths)
+	s.mux.HandleFunc("GET /api/v1/alerts", s.handleAlerts)
+	s.mux.HandleFunc("GET /api/v1/alerts/stream", s.handleAlertStream)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

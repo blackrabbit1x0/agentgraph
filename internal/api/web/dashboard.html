@@ -35,6 +35,22 @@
   }
   aside h2 { font-size: 13px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; letter-spacing: .5px; }
   aside section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  #alert-feed { max-height: 300px; overflow-y: auto; }
+  .alert-item {
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 5px; font-size: 11px; line-height: 1.4;
+  }
+  .alert-item.CRITICAL { border-color: var(--critical); }
+  .alert-item.HIGH { border-color: var(--high); }
+  .alert-item.COMPLETE { border-color: var(--critical); background: rgba(248,81,73,0.12); }
+  .alert-item .meta { color: var(--muted); }
+  .live-badge {
+    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; background: var(--low); color: #0d1117;
+    animation: ag-blink 2s ease-in-out infinite;
+  }
+  .live-badge.off { background: var(--info); animation: none; }
+  @keyframes ag-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
   .krow { display: flex; justify-content: space-between; padding: 3px 0; }
   .krow .k { color: var(--muted); }
   .krow .v { font-weight: 600; }
@@ -80,6 +96,10 @@
     <section>
       <h2>AI Agents</h2>
       <div id="agents"></div>
+    </section>
+    <section>
+      <h2>Live Alerts <span id="live-badge" class="live-badge off" style="display:none">LIVE</span></h2>
+      <div id="alert-feed"><p class="muted" id="alert-status">Runtime detection off.</p></div>
     </section>
     <section>
       <h2>Details</h2>
@@ -308,8 +328,59 @@ function renderLegend() {
   ).join('') + `<span class="item"><span class="dot" style="background:#e3b341;transform:rotate(45deg)"></span>Crown Jewel</span>`;
 }
 
+// Live alert feed via server-sent events (requires serve --watch).
+function initAlertFeed() {
+  if (typeof EventSource === 'undefined') return;
+  const feed = document.getElementById('alert-feed');
+  const badge = document.getElementById('live-badge');
+  const status = document.getElementById('alert-status');
+  let es;
+  try {
+    es = new EventSource('/api/v1/alerts/stream');
+  } catch (e) {
+    return; // runtime detection off; keep the hint text
+  }
+  es.onopen = () => {
+    badge.style.display = 'inline-block';
+    badge.classList.remove('off');
+    if (status) status.remove();
+  };
+  es.onerror = () => {
+    badge.classList.add('off');
+    // EventSource auto-reconnects; if detection is off it will keep
+    // retrying harmlessly.
+  };
+  es.addEventListener('alert', ev => {
+    badge.style.display = 'inline-block';
+    badge.classList.remove('off');
+    if (status) status.remove();
+    let a;
+    try { a = JSON.parse(ev.data); } catch { return; }
+    const div = document.createElement('div');
+    div.className = 'alert-item ' + a.level;
+    const cls = a.level === 'COMPLETE' ? 'sev-CRITICAL' : 'sev-' + a.level;
+    div.innerHTML =
+      `<b><span class="sev ${cls}">${a.level}</span></b> ${a.agent} → ${a.target}` +
+      `<div class="meta">${a.stages_observed}/${a.total_stages} stages · risk ${a.risk}/100` +
+      (a.next_node ? ` · next: ${a.next_node}` : '') + `</div>`;
+    div.onclick = () => highlightPathByID(a.path_id, a.agent, a.target);
+    feed.prepend(div);
+    while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+  });
+}
+
+// Re-fetch paths and highlight the alert's path by ID.
+async function highlightPathByID(pathID, agent, target) {
+  try {
+    const res = await api(`/api/v1/paths?from=${encodeURIComponent(agent)}`);
+    const p = res.paths.find(x => x.id === pathID);
+    if (p) highlightPath(p);
+  } catch (e) { /* non-fatal */ }
+}
+
 async function main() {
   renderLegend();
+  initAlertFeed();
   const snapshot = await api('/api/v1/graph');
   initGraph(snapshot);
 

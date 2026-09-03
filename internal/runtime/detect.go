@@ -47,10 +47,19 @@ type Alert struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// Detector matches event streams against known attack paths.
+// Detector matches event streams against known attack paths. It supports
+// both batch processing (Process) and incremental streaming (ProcessEvent),
+// which powers live tailing.
 type Detector struct {
-	g    *graph.Graph
-	opts paths.Options
+	g           *graph.Graph
+	opts        paths.Options
+	states      map[string][]*pathState // path states by agent
+	nodeIndex   []indexedNode           // for fast fuzzy resolution
+	initialized bool
+}
+
+type indexedNode struct {
+	id, lowerID, name, lowerName string
 }
 
 // New returns a detector for a graph.
@@ -66,55 +75,84 @@ type pathState struct {
 	alerted map[string]bool
 }
 
-// Process consumes events in order and returns alerts. Events may arrive
-// for any agent; each agent's paths advance independently. A path
-// advances when an event resolves to the next node in its chain
-// (matched by node ID or name, case-insensitive substring allowed).
-func (d *Detector) Process(events []Event) ([]Alert, error) {
-	// Enumerate all paths globally so IDs match other commands.
+// Init enumerates attack paths and prepares per-path state. Called
+// lazily by ProcessEvent on first use.
+func (d *Detector) Init() error {
+	if d.initialized {
+		return nil
+	}
 	all, err := paths.EnumerateAll(d.g, d.opts)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	// Index path states by agent.
-	states := map[string][]*pathState{}
+	d.states = map[string][]*pathState{}
 	for _, p := range all {
-		states[p.Source.ID] = append(states[p.Source.ID], &pathState{
+		d.states[p.Source.ID] = append(d.states[p.Source.ID], &pathState{
 			path:    p,
 			score:   risk.ScorePath(p.Nodes(), p.Edges(), p.Confidence),
 			alerted: map[string]bool{},
 		})
 	}
-
-	var alerts []Alert
-
-	for _, ev := range events {
-		agentStates := states[ev.Agent]
-		if agentStates == nil {
-			continue
-		}
-
-		matched := d.resolveNode(ev)
-		if matched == "" {
-			continue
-		}
-
-		for _, st := range agentStates {
-			nodes := st.path.Nodes()
-			// Advance: the event's node must be the next node in the chain.
-			if st.cursor+1 < len(nodes) && nodes[st.cursor+1].ID == matched {
-				st.cursor++
-				if alert, ok := st.evaluate(ev.Timestamp); ok {
-					alerts = append(alerts, alert)
-				}
-			}
-		}
+	for _, n := range d.g.Nodes() {
+		d.nodeIndex = append(d.nodeIndex, indexedNode{
+			id: n.ID, lowerID: strings.ToLower(n.ID),
+			name: n.Name, lowerName: strings.ToLower(n.Name),
+		})
 	}
+	d.initialized = true
+	return nil
+}
 
+// Process consumes a batch of events in order and returns alerts.
+func (d *Detector) Process(events []Event) ([]Alert, error) {
+	if err := d.Init(); err != nil {
+		return nil, err
+	}
+	var alerts []Alert
+	for _, ev := range events {
+		al, err := d.ProcessEvent(ev)
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, al...)
+	}
 	sort.SliceStable(alerts, func(i, j int) bool {
 		return alerts[i].Timestamp.Before(alerts[j].Timestamp)
 	})
+	return alerts, nil
+}
+
+// ProcessEvent consumes one event and returns any alerts it triggered.
+// Safe to call concurrently with nothing else; designed for sequential
+// streaming.
+func (d *Detector) ProcessEvent(ev Event) ([]Alert, error) {
+	if !d.initialized {
+		if err := d.Init(); err != nil {
+			return nil, err
+		}
+	}
+
+	agentStates := d.states[ev.Agent]
+	if agentStates == nil {
+		return nil, nil
+	}
+
+	matched := d.resolveNode(ev)
+	if matched == "" {
+		return nil, nil
+	}
+
+	var alerts []Alert
+	for _, st := range agentStates {
+		nodes := st.path.Nodes()
+		// Advance: the event's node must be the next node in the chain.
+		if st.cursor+1 < len(nodes) && nodes[st.cursor+1].ID == matched {
+			st.cursor++
+			if alert, ok := st.evaluate(ev.Timestamp); ok {
+				alerts = append(alerts, alert)
+			}
+		}
+	}
 	return alerts, nil
 }
 
@@ -174,22 +212,19 @@ func (d *Detector) resolveNode(ev Event) string {
 		if _, ok := d.g.Node(candidate); ok {
 			return candidate
 		}
-		for _, n := range d.g.Nodes() {
-			if n.Name != "" && n.Name == candidate {
-				return n.ID
+		lower := strings.ToLower(candidate)
+		for _, n := range d.nodeIndex {
+			if n.name != "" && n.name == candidate {
+				return n.id
 			}
 		}
-		for _, n := range d.g.Nodes() {
-			if containsFold(n.ID, candidate) || containsFold(n.Name, candidate) {
-				return n.ID
+		for _, n := range d.nodeIndex {
+			if strings.Contains(n.lowerID, lower) || (n.lowerName != "" && strings.Contains(n.lowerName, lower)) {
+				return n.id
 			}
 		}
 	}
 	return ""
-}
-
-func containsFold(s, sub string) bool {
-	return sub != "" && len(s) >= len(sub) && strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
 // Summary aggregates alerts for reporting.

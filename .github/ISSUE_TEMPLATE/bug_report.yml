@@ -1,0 +1,40 @@
+name: Bug report
+description: Something is broken or behaving incorrectly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including any command output.
+      placeholder: |
+        $ agentgraph demo blast-radius finance-agent
+        error: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `agentgraph --help` header or the release tag
+      placeholder: v0.5.0 / commit abc1234
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Docker
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration or graph (if relevant)
+      description: Redact anything sensitive. Never paste secret values.

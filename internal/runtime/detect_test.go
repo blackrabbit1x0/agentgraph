@@ -215,3 +215,40 @@ func TestSummarize(t *testing.T) {
 		t.Fatalf("paths at risk wrong: %v", s.PathsAtRisk)
 	}
 }
+
+func TestIncrementalStreaming(t *testing.T) {
+	// Streaming one event at a time must produce the same alerts as the
+	// equivalent batch, enabling live tailing.
+	batchEvents := []Event{
+		{Timestamp: ts(0), Agent: "finance-agent", Tool: "github-mcp"},
+		{Timestamp: ts(1), Agent: "finance-agent", Target: "payments-repository"},
+		{Timestamp: ts(2), Agent: "finance-agent", Target: "production-ci"},
+		{Timestamp: ts(3), Agent: "finance-agent", Target: "aws-deploy-token"},
+		{Timestamp: ts(4), Agent: "finance-agent", Target: "aws-deploy-role"},
+		{Timestamp: ts(5), Agent: "finance-agent", Target: "customer-database"},
+	}
+
+	batch, err := New(buildDemo(), paths.Options{}).Process(batchEvents)
+	if err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+
+	d := New(buildDemo(), paths.Options{})
+	var streamed []Alert
+	for _, ev := range batchEvents {
+		alerts, err := d.ProcessEvent(ev)
+		if err != nil {
+			t.Fatalf("stream event: %v", err)
+		}
+		streamed = append(streamed, alerts...)
+	}
+
+	if len(streamed) != len(batch) {
+		t.Fatalf("streamed %d alerts, batch produced %d", len(streamed), len(batch))
+	}
+	for i := range streamed {
+		if streamed[i].PathID != batch[i].PathID || streamed[i].Level != batch[i].Level {
+			t.Errorf("alert %d differs: streamed %+v vs batch %+v", i, streamed[i], batch[i])
+		}
+	}
+}

@@ -1,0 +1,30 @@
+name: Connector request
+description: Propose a new system for AgentGraph to discover
+labels: ["enhancement", "connector"]
+body:
+  - type: input
+    id: system
+    attributes:
+      label: Which system should AgentGraph connect to?
+      placeholder: e.g. Okta, HashiCorp Vault, Jenkins, Docker, PostgreSQL
+    validations:
+      required: true
+  - type: textarea
+    id: attack-surface
+    attributes:
+      label: What attack paths would it reveal?
+      description: Which nodes and relationships matter for this system?
+      placeholder: |
+        e.g. for a secrets manager: users -> policies -> secrets,
+        tokens with attached roles, dynamic credential leases
+  - type: textarea
+    id: api
+    attributes:
+      label: Which (read-only) APIs expose this?
+      description: List endpoints if you know them. Read-only access is a hard requirement for all connectors.
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Would you like to help build it?
+      options:
+        - label: I'm willing to contribute a PR (see CONTRIBUTING.md)

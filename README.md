@@ -142,6 +142,18 @@ names are recorded but values never stored; URLs are redacted of
 sensitive query parameters. With `--live`, HTTP/SSE servers are queried
 via the MCP protocol (initialize → tools/list) — **no tool is ever called**.
 
+**GitLab** (gitlab.com or self-hosted, read-only token):
+
+```bash
+./agentgraph scan gitlab --save graph.json
+```
+
+Discovers projects with your effective permissions (owner → CAN_ADMIN,
+developer/maintainer → CAN_WRITE, reporter → CAN_READ) and CI/CD
+variable metadata. The GitLab variables API returns values — this
+connector drops them at the parse boundary and stores only names and
+protection flags (enforced by test).
+
 **Kubernetes** (read-only API discovery):
 
 ```bash
@@ -156,7 +168,7 @@ kubeconfig, or the in-cluster service account environment.
 **Combine everything:**
 
 ```bash
-./agentgraph scan github aws mcp kubernetes --save graph.json
+./agentgraph scan github aws mcp gitlab kubernetes --save graph.json
 ```
 
 Then analyze or serve the saved graph:
@@ -245,7 +257,18 @@ agents *actually do*, and alerts when observed behavior advances in order
 along a known dangerous path (PRD section 68):
 
 ```bash
+# Batch: analyze an event log
 ./agentgraph watch --events agent-events.jsonl
+
+# Live: tail the log and process events as they arrive
+./agentgraph watch --events agent-events.jsonl --follow
+```
+
+Or run detection inside the dashboard — alerts stream live into the web
+UI via server-sent events:
+
+```bash
+./agentgraph serve --graph graph.json --watch agent-events.jsonl --follow
 ```
 
 Event format (one JSON object per line — from an MCP gateway log, audit
@@ -259,7 +282,8 @@ log, or agent telemetry):
 Alert levels: **HIGH** (≥50% of path stages observed), **CRITICAL**
 (within one stage of the target), **COMPLETE** (target reached).
 Out-of-order events never advance a path; every alert names the path,
-the next hop, and the path's risk score.
+the next hop, and the path's risk score. Alerts are also exposed at
+`/api/v1/alerts` and `/api/v1/alerts/stream` (SSE).
 
 ## MITRE ATT&CK and agent-attack taxonomy
 
@@ -500,10 +524,24 @@ internal/runtime/          attack-path execution detection (events -> alerts)
 internal/attack/           MITRE ATT&CK + agent-attack taxonomy mapping
 internal/svg/              static + animated SVG graph rendering
 internal/config/           YAML static connector (secret redaction)
-internal/connectors/       GitHub, AWS, MCP, Kubernetes discovery
+internal/connectors/       GitHub, GitLab, AWS, MCP, Kubernetes discovery
 internal/api/              REST API + embedded web dashboard
 internal/cli/              CLI commands + embedded demo environment
 ```
+
+## Performance
+
+The graph engine is validated against the engineering targets
+(100k nodes / 500k edges, shortest path < 2s, blast radius < 5s,
+search < 1s) by a synthetic benchmark suite:
+
+```bash
+make bench
+```
+
+Measured on the synthetic topology (100,000 nodes / 545,000 edges):
+shortest path ~35ms, blast radius ~740ms, graph search ~4ms — with
+roughly 20–60× headroom against every target.
 
 ## Roadmap
 
@@ -515,8 +553,8 @@ internal/cli/              CLI commands + embedded demo environment
   Manager, S3, RDS, Lambda)
 - **Phase 3 — Remediation** ✅ (minimum-cut analysis, policy engine)
 - **Phase 4 — Historical graph** ✅ (snapshot diff with path attribution)
-- **Phase 5 — Enterprise identity** 🚧 (Kubernetes ✅; Entra ID, GitLab,
-  Slack, Active Directory next)
+- **Phase 5 — Enterprise identity** 🚧 (Kubernetes + GitLab ✅; Entra ID,
+  Slack, Okta, Vault next)
 - **Research — EDR for AI agents** 🚧 (runtime attack-path execution
   detection: `agentgraph watch`; next: probabilistic paths, behavior
   graphs)

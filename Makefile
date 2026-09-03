@@ -9,6 +9,10 @@ build:
 test:
 	go test ./...
 
+bench:
+	RUN_PERF=1 go test -run TestPerf -v ./internal/bench/
+	go test -bench=. -benchtime=1x -run '^$$' ./internal/bench/
+
 vet:
 	go vet ./...
 

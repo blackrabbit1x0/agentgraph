@@ -9,6 +9,7 @@ import (
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/aws"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/github"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/gitlab"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/kubernetes"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/mcp"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
@@ -88,6 +89,37 @@ referenced from agentgraph.yaml relationships.`,
 	return cmd
 }
 
+func newScanGitlabCommand() *cobra.Command {
+	var baseURL, token string
+
+	cmd := &cobra.Command{
+		Use:   "gitlab",
+		Short: "Discover GitLab projects, permissions, and CI/CD variable metadata",
+		Long: `Discover GitLab projects, your effective permissions, and CI/CD
+variable metadata (gitlab.com or self-hosted, read-only token via
+GITLAB_TOKEN or --token).
+
+The variables API returns values; this connector drops them at the parse
+boundary and stores only names and protection flags.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if token == "" {
+				token = os.Getenv("GITLAB_TOKEN")
+			}
+			api, err := gitlab.NewRestAPI(baseURL, token)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			c := gitlab.New(gitlab.Options{API: api})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().StringVar(&baseURL, "url", "https://gitlab.com", "GitLab base URL (self-hosted supported)")
+	cmd.Flags().StringVar(&token, "token", "", "GitLab personal access token (read-only)")
+	return cmd
+}
+
 func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [connector...]",
@@ -107,7 +139,7 @@ Examples:
 			printDashboard(g)
 		},
 	}
-	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand(), newScanMCPCommand(), newScanKubernetesCommand())
+	cmd.AddCommand(newScanGithubCommand(), newScanGitlabCommand(), newScanAWSCommand(), newScanMCPCommand(), newScanKubernetesCommand())
 	return cmd
 }
 
@@ -199,6 +231,18 @@ func runScan(args []string) *graph.Graph {
 				os.Exit(1)
 			}
 			conns = append(conns, aws.New(aws.Options{API: api}))
+		case "gitlab":
+			token := os.Getenv("GITLAB_TOKEN")
+			if token == "" {
+				fmt.Println("error: GITLAB_TOKEN not set (for full options run: agentgraph scan gitlab)")
+				os.Exit(1)
+			}
+			api, err := gitlab.NewRestAPI("https://gitlab.com", token)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			conns = append(conns, gitlab.New(gitlab.Options{API: api}))
 		case "mcp":
 			conns = append(conns, mcp.New(mcp.Options{}))
 		case "kubernetes":

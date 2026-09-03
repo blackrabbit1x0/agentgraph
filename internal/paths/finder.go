@@ -217,9 +217,13 @@ func Enumerate(g *graph.Graph, source string, opts Options) ([]*Path, error) {
 
 // EnumerateAll enumerates paths from every AI agent in the graph.
 // IDs are assigned across the combined, deterministically sorted result.
+// When any single agent's enumeration hits the MaxPaths cap, its partial
+// results are kept and enumeration continues with the remaining agents;
+// the returned error is a *TruncatedError in that case.
 func EnumerateAll(g *graph.Graph, opts Options) ([]*Path, error) {
 	opts.normalize()
 	var all []*Path
+	truncated := false
 	for _, agent := range g.NodesByType(graph.NodeAIAgent) {
 		ps, err := Enumerate(g, agent.ID, Options{
 			MaxDepth:        opts.MaxDepth,
@@ -231,12 +235,18 @@ func EnumerateAll(g *graph.Graph, opts Options) ([]*Path, error) {
 			EdgeTypes:       opts.EdgeTypes,
 		})
 		if err != nil {
-			return nil, err
+			if _, ok := err.(*TruncatedError); !ok {
+				return nil, err
+			}
+			truncated = true
 		}
 		all = append(all, ps...)
 	}
 	sortPaths(all)
 	assignIDs(all)
+	if truncated {
+		return all, &TruncatedError{Found: len(all)}
+	}
 	return all, nil
 }
 
