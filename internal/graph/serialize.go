@@ -42,13 +42,15 @@ func FromSnapshot(s *Snapshot) (*Graph, error) {
 	return g, nil
 }
 
-// SaveSnapshotFile writes the graph to a JSON file.
+// SaveSnapshotFile writes the graph to a JSON file. Snapshots contain
+// sensitive security metadata (secret names, role ARNs, environments),
+// so they are written owner-only (0600).
 func SaveSnapshotFile(g *Graph, path string) error {
 	data, err := json.MarshalIndent(g.Snapshot(), "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // LoadSnapshotFile reads a graph from a JSON file.

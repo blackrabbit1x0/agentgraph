@@ -547,6 +547,31 @@ Measured on the synthetic topology (100,000 nodes / 545,000 edges):
 shortest path ~35ms, blast radius ~740ms, graph search ~4ms — with
 roughly 20–60× headroom against every target.
 
+## Security
+
+AgentGraph handles sensitive infrastructure metadata and is designed to
+be safe to run and share:
+
+- **Secret values are never stored.** The YAML loader redacts forbidden
+  metadata fields (with normalization, across all node types and edges)
+  and warns; every connector drops API-provided values at the parse
+  boundary (GitLab variables, GitHub/AWS/K8s secrets APIs) — enforced by
+  tests. Snapshots are written `0600`.
+- **The dashboard escapes all data** and loads no external scripts
+  (Cytoscape is vendored into the binary); a strict CSP is served.
+- **The API can require a bearer token** (`serve --token`), is
+  rate-limited per client, caps SSE subscribers, and sets server
+  timeouts. Binding beyond loopback without a token prints a warning.
+- **`scan mcp --live` egress policy:** servers from your global configs
+  may live on private hosts; servers configured by files in the working
+  directory (possibly from an untrusted repo) are only queried on public
+  hosts (`--allow-private` to override). Redirects are denied. Probed
+  URLs are logged.
+- **Release binaries are checksummed:** each release ships `SHA256SUMS`,
+  verified by `install.sh` before installation.
+
+See [SECURITY.md](SECURITY.md) for the reporting policy.
+
 ## Roadmap
 
 - **Phase 0 — Graph prototype** ✅ (model, import, paths, blast radius,

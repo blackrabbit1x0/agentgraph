@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,7 +59,8 @@ Event format (one JSON object per line):
 			defer f.Close()
 
 			det := rt.New(g, paths.Options{})
-			events, alerts, err := drainEvents(f, det)
+			tailer := &eventTailer{}
+			events, alerts, err := tailer.drain(f, det)
 			if err != nil {
 				fmt.Printf("error: %v\n", err)
 				return
@@ -89,7 +90,7 @@ Event format (one JSON object per line):
 					fmt.Println("\nStopped.")
 					return
 				case <-ticker.C:
-					n, alerts, err := drainEvents(f, det)
+					n, alerts, err := tailer.drain(f, det)
 					if err != nil {
 						fmt.Printf("error: %v\n", err)
 						return
@@ -111,23 +112,45 @@ Event format (one JSON object per line):
 	return cmd
 }
 
-// drainEvents reads complete lines from the current file position,
-// processes each through the detector, and returns the number of events
-// consumed plus any alerts. Lines without a trailing newline are left for
-// the next poll.
-func drainEvents(f *os.File, det *rt.Detector) (int, []rt.Alert, error) {
+// eventTailer reads newline-delimited events from a file across
+// repeated drain calls. Partial lines (a writer mid-append) are retained
+// in an internal buffer and completed on the next drain, so no bytes are
+// ever lost or double-parsed.
+type eventTailer struct {
+	buf []byte
+}
+
+// drain reads all newly available bytes from the file, extracts complete
+// lines, and processes each through the detector. Returns the number of
+// events consumed plus any alerts.
+func (t *eventTailer) drain(f *os.File, det *rt.Detector) (int, []rt.Alert, error) {
+	chunk := make([]byte, 64<<10)
+	for {
+		n, err := f.Read(chunk)
+		if n > 0 {
+			t.buf = append(t.buf, chunk[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, nil, err
+		}
+		if n == 0 {
+			break
+		}
+	}
+
+	// Extract only complete lines; any partial tail stays buffered.
 	var events int
 	var alerts []rt.Alert
-	reader := bufio.NewReader(f)
 	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return events, alerts, nil
-			}
-			return events, alerts, err
+		i := bytes.IndexByte(t.buf, '\n')
+		if i < 0 {
+			break
 		}
-		line = strings.TrimRight(line, "\r\n")
+		line := strings.TrimRight(string(t.buf[:i]), "\r")
+		t.buf = t.buf[i+1:]
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -145,6 +168,7 @@ func drainEvents(f *os.File, det *rt.Detector) (int, []rt.Alert, error) {
 		}
 		alerts = append(alerts, newAlerts...)
 	}
+	return events, alerts, nil
 }
 
 func parseEventsJSONL(data []byte) ([]rt.Event, error) {

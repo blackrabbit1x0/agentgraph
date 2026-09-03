@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AgentGraph</title>
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script src="/static/cytoscape.min.js"></script>
+<script src="/static/cytoscape-dagre.js"></script>
+<script src="/static/app.js"></script>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --border: #30363d;
@@ -35,25 +36,9 @@
   }
   aside h2 { font-size: 13px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; letter-spacing: .5px; }
   aside section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-  #alert-feed { max-height: 300px; overflow-y: auto; }
-  .alert-item {
-    padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
-    margin-bottom: 5px; font-size: 11px; line-height: 1.4;
-  }
-  .alert-item.CRITICAL { border-color: var(--critical); }
-  .alert-item.HIGH { border-color: var(--high); }
-  .alert-item.COMPLETE { border-color: var(--critical); background: rgba(248,81,73,0.12); }
-  .alert-item .meta { color: var(--muted); }
-  .live-badge {
-    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px;
-    font-size: 10px; font-weight: 700; background: var(--low); color: #0d1117;
-    animation: ag-blink 2s ease-in-out infinite;
-  }
-  .live-badge.off { background: var(--info); animation: none; }
-  @keyframes ag-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .krow { display: flex; justify-content: space-between; padding: 3px 0; }
-  .krow .k { color: var(--muted); }
-  .krow .v { font-weight: 600; }
+  .krow { display: flex; justify-content: space-between; padding: 3px 0; gap: 8px; }
+  .krow .k { color: var(--muted); flex-shrink: 0; }
+  .krow .v { font-weight: 600; word-break: break-all; text-align: right; }
   .sev { padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
   .sev-CRITICAL { background: var(--critical); color: #fff; }
   .sev-HIGH { background: var(--high); color: #fff; }
@@ -65,8 +50,8 @@
     margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
   }
   .agent-item:hover, .agent-item.active { border-color: var(--accent); }
-  .agent-item .name { font-weight: 600; font-size: 12px; }
-  .agent-item .risk { font-size: 11px; }
+  .agent-item .name { font-weight: 600; font-size: 12px; word-break: break-all; }
+  .agent-item .risk { font-size: 11px; flex-shrink: 0; margin-left: 8px; }
   .path-list .path {
     padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
     margin-bottom: 6px; cursor: pointer; font-size: 11px; line-height: 1.5;
@@ -83,6 +68,22 @@
   #legend { display: flex; flex-wrap: wrap; gap: 8px; }
   #legend .item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
   #legend .dot { width: 10px; height: 10px; border-radius: 50%; }
+  #alert-feed { max-height: 300px; overflow-y: auto; }
+  .alert-item {
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 5px; font-size: 11px; line-height: 1.4;
+  }
+  .alert-item.CRITICAL { border-color: var(--critical); }
+  .alert-item.HIGH { border-color: var(--high); }
+  .alert-item.COMPLETE { border-color: var(--critical); background: rgba(248,81,73,0.12); }
+  .alert-item .meta { color: var(--muted); word-break: break-all; }
+  .live-badge {
+    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; background: var(--low); color: #0d1117;
+    animation: ag-blink 2s ease-in-out infinite;
+  }
+  .live-badge.off { background: var(--info); animation: none; }
+  @keyframes ag-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 </style>
 </head>
 <body>
@@ -115,293 +116,5 @@
     </section>
   </aside>
 </main>
-
-<script>
-const TYPE_COLORS = {
-  AI_AGENT: '#f778ba', MCP_SERVER: '#bc8cff', TOOL: '#d2a8ff',
-  IDENTITY: '#58a6ff', SECRET: '#ff7b72', REPOSITORY: '#3fb950',
-  CI_PIPELINE: '#d29922', CLOUD_ROLE: '#ffa657', CLOUD_RESOURCE: '#f0883e',
-  DATABASE: '#f85149', HOST: '#8b949e', API: '#79c0ff', DATASET: '#e3b341',
-};
-const TYPE_LABEL = {
-  AI_AGENT: 'AI Agent', MCP_SERVER: 'MCP Server', TOOL: 'Tool',
-  IDENTITY: 'Identity', SECRET: 'Secret', REPOSITORY: 'Repository',
-  CI_PIPELINE: 'CI Pipeline', CLOUD_ROLE: 'Cloud Role', CLOUD_RESOURCE: 'Cloud Resource',
-  DATABASE: 'Database', HOST: 'Host', API: 'API', DATASET: 'Dataset',
-};
-
-let cy = null;
-let selectedAgent = null;
-
-async function api(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-  return res.json();
-}
-
-function shortName(id) {
-  const parts = id.split('/');
-  return parts[parts.length - 1] || id;
-}
-
-function initGraph(snapshot) {
-  const nodes = snapshot.nodes.map(n => ({
-    data: {
-      id: n.id, label: shortName(n.Name || n.id), fullLabel: n.Name || n.id,
-      type: n.Type, crown: !!n.crown_jewel,
-      criticality: n.criticality || 0,
-      metadata: n.metadata || {},
-    },
-  }));
-  const edges = snapshot.edges.map(e => ({
-    data: {
-      id: e.source + '|' + e.type + '|' + e.target,
-      source: e.source, target: e.target, label: e.type,
-      confidence: e.confidence || 1,
-    },
-  }));
-
-  cy = cytoscape({
-    container: document.getElementById('cy'),
-    elements: [...nodes, ...edges],
-    layout: { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 90, animate: true },
-    style: [
-      { selector: 'node', style: {
-        'background-color': 'data(color)',
-        'label': 'data(label)', 'color': '#c9d1d9', 'font-size': 10,
-        'width': 30, 'height': 30,
-        'border-width': 2, 'border-color': '#30363d',
-        'text-valign': 'bottom', 'text-margin-y': 6,
-        'text-wrap': 'wrap', 'text-max-width': 90,
-      }},
-      { selector: 'node[crown = true]', style: {
-        'border-width': 3, 'border-color': '#e3b341',
-        'shape': 'diamond', 'width': 36, 'height': 36,
-      }},
-      { selector: 'node[type = "AI_AGENT"]', style: { 'width': 40, 'height': 40, 'font-size': 11 }},
-      { selector: 'edge', style: {
-        'width': 1.5, 'line-color': '#30363d',
-        'target-arrow-color': '#30363d', 'target-arrow-shape': 'triangle',
-        'curve-style': 'bezier', 'arrow-scale': 0.7,
-      }},
-      { selector: 'edge[label = "CAN_ADMIN"], edge[label = "CAN_EXECUTE"], edge[label = "CAN_IMPERSONATE"]',
-        style: { 'line-color': '#f85149', 'target-arrow-color': '#f85149', 'width': 2.5 }},
-      { selector: 'edge[label = "CAN_ASSUME"]', style: { 'line-color': '#ffa657', 'target-arrow-color': '#ffa657' }},
-      { selector: 'edge[label = "CONTAINS_SECRET"], edge[label = "HAS_SECRET"]',
-        style: { 'line-color': '#ff7b72', 'target-arrow-color': '#ff7b72' }},
-      { selector: '.highlighted', style: { 'line-color': '#58a6ff', 'target-arrow-color': '#58a6ff', 'width': 3 }},
-      { selector: '.faded', style: { 'opacity': 0.15 }},
-      { selector: '.pathnode', style: { 'border-color': '#58a6ff', 'border-width': 3 }},
-    ],
-  });
-
-  // Apply type colors (must be per-node via class-independent mapping).
-  cy.nodes().forEach(n => {
-    n.style('background-color', TYPE_COLORS[n.data('type')] || '#8b949e');
-  });
-
-  cy.on('tap', 'node', async evt => {
-    const n = evt.target;
-    const meta = n.data('metadata') || {};
-    let html = `<div class="krow"><span class="k">Type</span><span class="v">${TYPE_LABEL[n.data('type')] || n.data('type')}</span></div>`;
-    html += `<div class="krow"><span class="k">ID</span><span class="v" style="word-break:break-all">${n.id()}</span></div>`;
-    if (n.data('crown')) html += `<div class="krow"><span class="k">Crown Jewel</span><span class="v crown">yes</span></div>`;
-    if (n.data('criticality')) html += `<div class="krow"><span class="k">Criticality</span><span class="v">${n.data('criticality')}/100</span></div>`;
-    for (const [k, v] of Object.entries(meta)) {
-      const val = typeof v === 'object' ? JSON.stringify(v) : v;
-      html += `<div class="krow"><span class="k">${k}</span><span class="v">${val}</span></div>`;
-    }
-    if (n.data('type') === 'AI_AGENT') {
-      html += `<div style="margin-top:10px"><button onclick="selectAgent('${n.id()}')">Analyze blast radius</button></div>`;
-    }
-    document.getElementById('details').innerHTML = html;
-  });
-}
-
-function renderStats(g, snapshot, counts) {
-  document.getElementById('stats').innerHTML =
-    `<span>Agents <b>${counts.agents}</b></span>` +
-    `<span>Nodes <b>${snapshot.nodes.length}</b></span>` +
-    `<span>Edges <b>${snapshot.edges.length}</b></span>` +
-    `<span>Critical paths <b style="color:var(--critical)">${counts.critical}</b></span>` +
-    `<span>High paths <b style="color:var(--high)">${counts.high}</b></span>` +
-    `<span>Crown jewels exposed <b class="crown">${counts.crownExposed}</b></span>`;
-}
-
-function renderAgents(agents) {
-  const el = document.getElementById('agents');
-  el.innerHTML = '';
-  agents.sort((a, b) => b.exposure_score - a.exposure_score);
-  for (const a of agents) {
-    const div = document.createElement('div');
-    div.className = 'agent-item';
-    div.innerHTML = `<span class="name">${a.id}</span>
-      <span class="risk">${a.exposure_score} <span class="sev sev-${a.exposure_risk}">${a.exposure_risk}</span></span>`;
-    div.onclick = () => selectAgent(a.id);
-    if (a.id === selectedAgent) div.classList.add('active');
-    el.appendChild(div);
-  }
-}
-
-async function selectAgent(id) {
-  selectedAgent = id;
-  document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
-  cy.elements().removeClass('faded highlighted pathnode');
-
-  const rad = await api(`/api/v1/agents/${encodeURIComponent(id)}/blast-radius`);
-  let html = `<div class="krow"><span class="k">Agent</span><span class="v">${rad.agent}</span></div>
-    <div class="krow"><span class="k">Exposure</span><span class="v">${rad.exposure_score} <span class="sev sev-${rad.exposure_risk}">${rad.exposure_risk}</span></span></div>
-    <div class="krow"><span class="k">Reachable nodes</span><span class="v">${rad.reachable_nodes}</span></div>
-    <div class="krow"><span class="k">Secrets</span><span class="v">${rad.secrets}</span></div>
-    <div class="krow"><span class="k">Cloud roles</span><span class="v">${rad.cloud_roles}</span></div>`;
-  if (rad.highest_privilege) html += `<div class="krow"><span class="k">Highest privilege</span><span class="v">${rad.highest_privilege}</span></div>`;
-  if (rad.crown_jewels && rad.crown_jewels.length)
-    html += `<div class="krow"><span class="k">Crown jewels</span><span class="v crown">${rad.crown_jewels.join(', ')}</span></div>`;
-  html += `<div class="krow"><span class="k">Paths</span><span class="v">${rad.total_paths} (${rad.critical_paths} critical)</span></div>`;
-  if (rad.most_dangerous_path) {
-    html += `<p class="muted" style="margin:10px 0 4px">Most dangerous path (risk ${rad.most_dangerous_path.risk_score})</p>`;
-  }
-  html += `<div style="margin-top:10px"><button onclick="runRemediation('${id}')">Recommend remediation</button></div>
-    <div id="remediation"></div>`;
-  document.getElementById('details').innerHTML = html;
-
-  if (rad.most_dangerous_path) highlightPath(rad.most_dangerous_path);
-
-  await renderAgentPaths(id);
-}
-
-function highlightPath(p) {
-  cy.elements().removeClass('faded highlighted pathnode');
-  const ids = p.hops.map(h => h.node);
-  const chain = [];
-  for (let i = 0; i < ids.length - 1; i++) {
-    const e = cy.edges(`[source = "${ids[i]}"][target = "${ids[i+1]}"]`);
-    chain.push(...e);
-  }
-  cy.elements().addClass('faded');
-  cy.nodes().filter(n => ids.includes(n.id())).removeClass('faded').addClass('pathnode');
-  chain.forEach(e => { e.removeClass('faded'); e.addClass('highlighted'); });
-}
-
-async function renderAgentPaths(id) {
-  const el = document.getElementById('paths');
-  el.innerHTML = `<p class="muted">Loading paths...</p>`;
-  const res = await api(`/api/v1/paths?from=${encodeURIComponent(id)}`);
-  const scored = res.paths.slice(0, 20);
-  el.innerHTML = '';
-  for (const p of scored) {
-    const div = document.createElement('div');
-    div.className = 'path';
-    const chain = p.hops.map(h => h.node.split('/').pop() || h.node).join(' → ');
-    div.innerHTML = `<div><b>${p.id}</b> ${p.confidence.toFixed(2)} conf · ${p.hops.length - 1} hops</div>
-      <div class="hops">${chain}</div>`;
-    div.onclick = () => {
-      document.querySelectorAll('.path').forEach(e => e.classList.remove('active'));
-      div.classList.add('active');
-      highlightPath(p);
-    };
-    el.appendChild(div);
-  }
-}
-
-async function runRemediation(id) {
-  const el = document.getElementById('remediation');
-  el.innerHTML = `<p class="muted">Computing...</p>`;
-  try {
-    const rec = await api(`/api/v1/agents/${encodeURIComponent(id)}/remediations`);
-    const e = rec.remove_edge;
-    el.innerHTML = `<p class="muted" style="margin-top:12px">Top recommendation</p>
-      <div class="krow"><span class="k">Remove</span></div>
-      <div style="word-break:break-all">${e.source}<br>─ ${e.type} ─▶<br>${e.target}</div>
-      <div class="krow"><span class="k">Paths</span><span class="v">${rec.paths_before} → ${rec.paths_after}</span></div>
-      <div class="krow"><span class="k">Critical left</span><span class="v">${rec.critical_after} / ${rec.critical_before}</span></div>
-      <div class="krow"><span class="k">Risk reduction</span><span class="v" style="color:var(--low)">${rec.risk_reduction_pct}%</span></div>`;
-  } catch (err) {
-    el.innerHTML = `<p class="muted">Error: ${err.message}</p>`;
-  }
-}
-
-function renderLegend() {
-  const el = document.getElementById('legend');
-  el.innerHTML = Object.entries(TYPE_LABEL).map(([t, label]) =>
-    `<span class="item"><span class="dot" style="background:${TYPE_COLORS[t]}"></span>${label}</span>`
-  ).join('') + `<span class="item"><span class="dot" style="background:#e3b341;transform:rotate(45deg)"></span>Crown Jewel</span>`;
-}
-
-// Live alert feed via server-sent events (requires serve --watch).
-function initAlertFeed() {
-  if (typeof EventSource === 'undefined') return;
-  const feed = document.getElementById('alert-feed');
-  const badge = document.getElementById('live-badge');
-  const status = document.getElementById('alert-status');
-  let es;
-  try {
-    es = new EventSource('/api/v1/alerts/stream');
-  } catch (e) {
-    return; // runtime detection off; keep the hint text
-  }
-  es.onopen = () => {
-    badge.style.display = 'inline-block';
-    badge.classList.remove('off');
-    if (status) status.remove();
-  };
-  es.onerror = () => {
-    badge.classList.add('off');
-    // EventSource auto-reconnects; if detection is off it will keep
-    // retrying harmlessly.
-  };
-  es.addEventListener('alert', ev => {
-    badge.style.display = 'inline-block';
-    badge.classList.remove('off');
-    if (status) status.remove();
-    let a;
-    try { a = JSON.parse(ev.data); } catch { return; }
-    const div = document.createElement('div');
-    div.className = 'alert-item ' + a.level;
-    const cls = a.level === 'COMPLETE' ? 'sev-CRITICAL' : 'sev-' + a.level;
-    div.innerHTML =
-      `<b><span class="sev ${cls}">${a.level}</span></b> ${a.agent} → ${a.target}` +
-      `<div class="meta">${a.stages_observed}/${a.total_stages} stages · risk ${a.risk}/100` +
-      (a.next_node ? ` · next: ${a.next_node}` : '') + `</div>`;
-    div.onclick = () => highlightPathByID(a.path_id, a.agent, a.target);
-    feed.prepend(div);
-    while (feed.children.length > 30) feed.removeChild(feed.lastChild);
-  });
-}
-
-// Re-fetch paths and highlight the alert's path by ID.
-async function highlightPathByID(pathID, agent, target) {
-  try {
-    const res = await api(`/api/v1/paths?from=${encodeURIComponent(agent)}`);
-    const p = res.paths.find(x => x.id === pathID);
-    if (p) highlightPath(p);
-  } catch (e) { /* non-fatal */ }
-}
-
-async function main() {
-  renderLegend();
-  initAlertFeed();
-  const snapshot = await api('/api/v1/graph');
-  initGraph(snapshot);
-
-  const agents = await api('/api/v1/agents');
-  renderAgents(agents.agents);
-
-  const paths = await api('/api/v1/paths');
-  const cjNodes = new Set(snapshot.nodes.filter(n => n.crown_jewel).map(n => n.id));
-  const crownExposed = new Set(paths.paths.filter(p => cjNodes.has(p.target)).map(p => p.target));
-
-  renderStats(null, snapshot, {
-    agents: agents.agents.length,
-    critical: agents.agents.reduce((s, a) => s + a.critical_paths, 0),
-    high: agents.agents.filter(a => a.top_path_risk >= 60 && a.top_path_risk < 80).length,
-    crownExposed: crownExposed.size,
-  });
-}
-
-main().catch(err => {
-  document.getElementById('details').innerHTML = `<p class="muted">Failed to load: ${err.message}</p>`;
-});
-</script>
 </body>
 </html>

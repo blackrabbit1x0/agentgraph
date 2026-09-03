@@ -70,6 +70,9 @@ func LoadRestAPI(ctx context.Context, opts RestOptions, kubeconfigPath string) (
 		if err != nil {
 			return nil, fmt.Errorf("kubernetes connector: kubeconfig: %w", err)
 		}
+		if cfg.Insecure {
+			fmt.Fprintf(os.Stderr, "warning: kubeconfig sets insecure-skip-tls-verify; API server identity will not be verified\n")
+		}
 		ro := RestOptions{
 			Server:                cfg.Server,
 			Token:                 cfg.Token,

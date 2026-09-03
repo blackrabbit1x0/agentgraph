@@ -292,15 +292,17 @@ func Render(g *graph.Graph, title string, hl *Highlight, animate bool) string {
 
 func shortLabel(n *graph.Node) string {
 	if n.Name != "" && n.Name != n.ID {
-		if len(n.Name) <= 26 {
+		r := []rune(n.Name)
+		if len(r) <= 26 {
 			return n.Name
 		}
-		return n.Name[:25] + "…"
+		return string(r[:25]) + "…"
 	}
 	parts := strings.Split(n.ID, "/")
 	last := parts[len(parts)-1]
-	if len(last) > 26 {
-		return last[:25] + "…"
+	r := []rune(last)
+	if len(r) > 26 {
+		return string(r[:25]) + "…"
 	}
 	return last
 }

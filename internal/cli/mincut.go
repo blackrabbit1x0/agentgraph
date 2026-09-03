@@ -75,6 +75,9 @@ Examples:
 func printCut(r *remediation.CutResult) {
 	fmt.Printf("%s -> %s\n", r.Agent, r.Target)
 	fmt.Printf("  Paths considered:   %d\n", r.PathsConsidered)
+	if r.Truncated {
+		fmt.Printf("  Warning:            path enumeration truncated; cut computed from partial paths\n")
+	}
 	if len(r.CutEdges) == 0 {
 		fmt.Printf("  No path exists; nothing to cut.\n\n")
 		return

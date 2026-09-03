@@ -9,6 +9,10 @@ import (
 	rt "github.com/blackrabbit1x0/agentgraph/internal/runtime"
 )
 
+// maxSubscribers caps concurrent SSE clients to bound goroutine and
+// channel usage.
+const maxSubscribers = 32
+
 // AlertHub fans out runtime-detection alerts to SSE subscribers and
 // keeps a bounded history for late joiners.
 type AlertHub struct {
@@ -54,16 +58,20 @@ func (h *AlertHub) History() []rt.Alert {
 }
 
 // Subscribe registers a subscriber channel; the returned func unsubscribes.
-func (h *AlertHub) Subscribe() (chan rt.Alert, func()) {
+// Returns false when the subscriber cap is reached.
+func (h *AlertHub) Subscribe() (chan rt.Alert, func(), bool) {
 	ch := make(chan rt.Alert, 64)
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.subscribers) >= maxSubscribers {
+		return nil, nil, false
+	}
 	h.subscribers[ch] = struct{}{}
-	h.mu.Unlock()
 	return ch, func() {
 		h.mu.Lock()
 		delete(h.subscribers, ch)
 		h.mu.Unlock()
-	}
+	}, true
 }
 
 // handleAlerts serves the alert history as JSON.
@@ -92,7 +100,7 @@ func (s *Server) handleAlertStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	writeAlert := func(a rt.Alert) bool {
 		data, err := json.Marshal(a)
@@ -106,23 +114,38 @@ func (s *Server) handleAlertStream(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	// History first, then live.
+	// Subscribe BEFORE replaying history so no alert can fall in the
+	// gap; duplicate replays are dropped by key.
+	ch, unsub, ok := s.hub.Subscribe()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "too many alert stream subscribers")
+		return
+	}
+	defer unsub()
+
+	seen := map[string]bool{}
 	for _, a := range s.hub.History() {
+		key := fmt.Sprintf("%s|%s|%s|%d", a.PathID, a.Level, a.Timestamp.Format("2006-01-02T15:04:05.000000000"), a.Stages)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		if !writeAlert(a) {
 			return
 		}
 	}
 
-	ch, unsub := s.hub.Subscribe()
-	defer unsub()
-
-	heartbeat := r.Context()
-
+	ctx := r.Context()
 	for {
 		select {
-		case <-heartbeat.Done():
+		case <-ctx.Done():
 			return
 		case a := <-ch:
+			key := fmt.Sprintf("%s|%s|%s|%d", a.PathID, a.Level, a.Timestamp.Format("2006-01-02T15:04:05.000000000"), a.Stages)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			if !writeAlert(a) {
 				return
 			}

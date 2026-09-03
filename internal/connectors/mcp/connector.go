@@ -19,6 +19,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,6 +49,12 @@ type ServerDef struct {
 	URL         string // http/sse: endpoint (sensitive params redacted)
 	EnvNames    []string
 	HeaderNames []string
+	// FromProjectDir marks servers configured by files in the working
+	// directory (as opposed to the user's global config locations).
+	// Project-dir configs may come from an untrusted repository, so live
+	// queries against non-public hosts are blocked for them unless
+	// Options.AllowPrivate is set.
+	FromProjectDir bool
 }
 
 // ClientDef is a discovered client configuration file.
@@ -70,6 +78,10 @@ type Options struct {
 	Live bool
 	// Timeout per live server query.
 	TimeoutSeconds int
+	// AllowPrivate permits live queries from project-directory configs
+	// to private/loopback/link-local addresses. Global (user-level)
+	// configs are always permitted.
+	AllowPrivate bool
 	// FileSystem abstraction (tests). nil = real filesystem.
 	FS FileReader
 	// Lister performs live tool listing (tests). nil = HTTPLister.
@@ -141,20 +153,27 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 				Provenance: provenance(client.Source),
 			})
 
-			// Live tool listing (http/sse only, best effort).
+			// Live tool listing (http/sse only, best effort), guarded by
+			// the egress policy below.
 			if c.opts.Live && lister != nil && srv.URL != "" {
-				tools, err := lister.ListTools(ctx, srv, c.opts.TimeoutSeconds)
-				if err == nil {
-					for _, t := range tools {
-						toolNode := toolNode(client.ID, srv.Name, t)
-						res.Nodes = append(res.Nodes, toolNode)
-						res.Edges = append(res.Edges, &graph.Edge{
-							Source:     srvNode.ID,
-							Target:     toolNode.ID,
-							Type:       graph.EdgeCanCall,
-							Confidence: 1.0,
-							Provenance: provenance(srv.URL),
-						})
+				if err := c.egressAllowed(srv); err != nil {
+					fmt.Fprintf(os.Stderr, "mcp connector: skipping live query for %s/%s: %v\n",
+						client.ID, srv.Name, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "mcp connector: probing %s\n", srv.URL)
+					tools, err := lister.ListTools(ctx, srv, c.opts.TimeoutSeconds)
+					if err == nil {
+						for _, t := range tools {
+							toolNode := toolNode(client.ID, srv.Name, t)
+							res.Nodes = append(res.Nodes, toolNode)
+							res.Edges = append(res.Edges, &graph.Edge{
+								Source:     srvNode.ID,
+								Target:     toolNode.ID,
+								Type:       graph.EdgeCanCall,
+								Confidence: 1.0,
+								Provenance: provenance(srv.URL),
+							})
+						}
 					}
 				}
 			}
@@ -246,10 +265,11 @@ func containsAny(s string, subs ...string) bool {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
 
 // discoverClients finds and parses all known client configurations.
@@ -269,45 +289,51 @@ func (c *Connector) discoverClients(fs FileReader) []ClientDef {
 		dir, _ = os.Getwd()
 	}
 
-	// Claude Desktop.
+	// Claude Desktop (global, trusted).
 	for _, p := range []string{
 		filepath.Join(appData, "Claude", "claude_desktop_config.json"),
 		filepath.Join(home, ".config", "Claude", "claude_desktop_config.json"),
 	} {
-		if cl, ok := parseStdClient(fs, p, "claude-desktop", "Claude Desktop"); ok {
+		if cl, ok := parseStdClient(fs, p, "claude-desktop", "Claude Desktop", false); ok {
 			clients = append(clients, cl)
 			break
 		}
 	}
 
-	// Cursor: global then project.
-	if cl, ok := parseStdClient(fs, filepath.Join(home, ".cursor", "mcp.json"), "cursor", "Cursor"); ok {
+	// Cursor: global (trusted) then project (untrusted).
+	if cl, ok := parseStdClient(fs, filepath.Join(home, ".cursor", "mcp.json"), "cursor", "Cursor", false); ok {
 		clients = append(clients, cl)
 	}
-	if cl, ok := parseStdClient(fs, filepath.Join(dir, ".cursor", "mcp.json"), "cursor-project", "Cursor (project)"); ok {
+	if cl, ok := parseStdClient(fs, filepath.Join(dir, ".cursor", "mcp.json"), "cursor-project", "Cursor (project)", true); ok {
 		clients = append(clients, cl)
 	}
 
-	// VS Code (project).
+	// VS Code (project, untrusted).
 	if cl, ok := parseVSCodeClient(fs, filepath.Join(dir, ".vscode", "mcp.json")); ok {
 		clients = append(clients, cl)
 	}
 
-	// opencode: global then project (JSONC tolerated).
+	// opencode: global (trusted) then project (untrusted); JSONC tolerated.
 	for _, p := range []string{
 		filepath.Join(home, ".config", "opencode", "opencode.json"),
 		filepath.Join(home, ".config", "opencode", "opencode.jsonc"),
+	} {
+		if cl, ok := parseOpenCodeClient(fs, p, false); ok {
+			clients = append(clients, cl)
+		}
+	}
+	for _, p := range []string{
 		filepath.Join(dir, "opencode.json"),
 		filepath.Join(dir, "opencode.jsonc"),
 	} {
-		if cl, ok := parseOpenCodeClient(fs, p); ok {
+		if cl, ok := parseOpenCodeClient(fs, p, true); ok {
 			clients = append(clients, cl)
 		}
 	}
 
-	// Generic .mcp.json / mcp.json.
+	// Generic .mcp.json / mcp.json (project, untrusted).
 	for _, name := range []string{".mcp.json", "mcp.json"} {
-		if cl, ok := parseStdClient(fs, filepath.Join(dir, name), "project", "Project ("+name+")"); ok {
+		if cl, ok := parseStdClient(fs, filepath.Join(dir, name), "project", "Project ("+name+")", true); ok {
 			clients = append(clients, cl)
 			break
 		}
@@ -329,8 +355,9 @@ func defaultAppData() string {
 }
 
 // parseStdClient parses the common {"mcpServers": {...}} format used by
-// Claude Desktop, Cursor, and generic .mcp.json files.
-func parseStdClient(fs FileReader, path, id, name string) (ClientDef, bool) {
+// Claude Desktop, Cursor, and generic .mcp.json files. fromProject marks
+// the config source as potentially untrusted.
+func parseStdClient(fs FileReader, path, id, name string, fromProject bool) (ClientDef, bool) {
 	if !fs.Exists(path) {
 		return ClientDef{}, false
 	}
@@ -351,6 +378,7 @@ func parseStdClient(fs FileReader, path, id, name string) (ClientDef, bool) {
 	for srvName, raw := range cfg.MCPServers {
 		if srv, ok := parseStdServer(raw); ok {
 			srv.Name = srvName
+			srv.FromProjectDir = fromProject
 			client.Servers = append(client.Servers, srv)
 		}
 	}
@@ -394,6 +422,7 @@ func parseStdServer(raw json.RawMessage) (ServerDef, bool) {
 }
 
 // parseVSCodeClient parses VS Code's {"servers": {...}} format.
+// VS Code configs are project-scoped and treated as untrusted.
 func parseVSCodeClient(fs FileReader, path string) (ClientDef, bool) {
 	if !fs.Exists(path) {
 		return ClientDef{}, false
@@ -419,7 +448,7 @@ func parseVSCodeClient(fs FileReader, path string) (ClientDef, bool) {
 	}
 	client := ClientDef{ID: "vscode", Name: "VS Code", Source: path}
 	for name, s := range cfg.Servers {
-		def := ServerDef{Name: name}
+		def := ServerDef{Name: name, FromProjectDir: true}
 		switch {
 		case s.Command != "":
 			def.Transport = "stdio"
@@ -447,7 +476,7 @@ func parseVSCodeClient(fs FileReader, path string) (ClientDef, bool) {
 }
 
 // parseOpenCodeClient parses opencode's {"mcp": {name: {type: local|remote}}} format.
-func parseOpenCodeClient(fs FileReader, path string) (ClientDef, bool) {
+func parseOpenCodeClient(fs FileReader, path string, fromProject bool) (ClientDef, bool) {
 	if !fs.Exists(path) {
 		return ClientDef{}, false
 	}
@@ -479,7 +508,7 @@ func parseOpenCodeClient(fs FileReader, path string) (ClientDef, bool) {
 		if s.Enabled != nil && !*s.Enabled {
 			continue
 		}
-		def := ServerDef{Name: name}
+		def := ServerDef{Name: name, FromProjectDir: fromProject}
 		switch s.Type {
 		case "local", "stdio":
 			def.Transport = "stdio"
@@ -576,8 +605,15 @@ func stripJSONC(data []byte) []byte {
 	return out
 }
 
-// RedactURL removes sensitive query parameter values from a URL.
+// RedactURL removes sensitive query parameter values and userinfo
+// credentials from a URL.
 func RedactURL(raw string) string {
+	// Redact embedded credentials (https://user:pass@host or
+	// https://apikey:@host) before any other processing.
+	if u, err := url.Parse(raw); err == nil && u.User != nil {
+		u.User = url.User("REDACTED")
+		raw = u.String()
+	}
 	anchor := ""
 	if i := strings.Index(raw, "#"); i >= 0 {
 		anchor = raw[i:]
@@ -594,7 +630,7 @@ func RedactURL(raw string) string {
 		if i := strings.Index(kv, "="); i >= 0 {
 			key = kv[:i]
 		}
-		if containsAny(strings.ToLower(key), "key", "token", "secret", "password", "auth", "signature") {
+		if containsAny(strings.ToLower(key), "key", "token", "secret", "password", "auth", "signature", "sig", "hmac") {
 			kept = append(kept, key+"=REDACTED")
 		} else {
 			kept = append(kept, kv)

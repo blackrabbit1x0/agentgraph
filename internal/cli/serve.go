@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +21,7 @@ func newServeCommand() *cobra.Command {
 	var watchFile string
 	var follow bool
 	var interval int
+	var apiToken string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -28,6 +30,13 @@ func newServeCommand() *cobra.Command {
 
 Works with the YAML configuration, a saved graph snapshot (--graph), or a
 live scan (--save the graph first, then serve it).
+
+Security: the server binds to 127.0.0.1 by default. Binding to a
+non-loopback address without --token exposes the full security graph
+(secret names, attack paths, crown jewels) to the network - a token is
+strongly recommended. With --token, API requests must authenticate via
+"Authorization: Bearer <token>" (or ?token=); the dashboard prompts for
+it once. API requests are rate-limited per client.
 
 With --watch <events.jsonl>, runtime attack-path detection runs inside
 the server: alerts appear live in the dashboard (via server-sent events)
@@ -39,30 +48,55 @@ Example:
   agentgraph serve --graph graph.json \
     --watch agent-events.jsonl --follow --addr 127.0.0.1:8080`,
 		Run: func(cmd *cobra.Command, args []string) {
-			g, _ := loadGraph()
+			g, warnings := loadGraph()
+			for _, w := range warnings {
+				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+			}
 			maybeSaveGraph(g)
 
-			mux := http.NewServeMux()
+			if apiToken == "" && !isLoopbackAddr(addr) {
+				fmt.Fprintf(os.Stderr,
+					"WARNING: serving on %s without --token exposes the full security graph to the network.\n", addr)
+			}
+
 			var hub *api.AlertHub
 			var stopTail func()
-
 			if watchFile != "" {
 				hub = api.NewAlertHub()
 				stopTail = startWatchTail(g, watchFile, follow, interval, hub)
 			}
 
-			mux.Handle("/", api.DashboardHandler())
-			mux.Handle("/api/", api.NewServerWithAlerts(g, hub).Handler())
+			dashboard := api.DashboardHandler()
+			apiServer := api.NewServerWithOptions(api.ServerOptions{
+				Graph: g,
+				Hub:   hub,
+				Token: apiToken,
+			})
+
+			mux := http.NewServeMux()
+			mux.Handle("/", securityHeaders(dashboard))
+			mux.Handle("/api/", securityHeaders(apiServer.Handler()))
 
 			fmt.Printf("AgentGraph dashboard: http://%s\n", addr)
 			fmt.Printf("Graph: %d nodes / %d edges\n", g.NodeCount(), g.EdgeCount())
+			if apiToken != "" {
+				fmt.Println("API authentication: bearer token enabled")
+			}
 			if watchFile != "" {
 				fmt.Printf("Runtime detection: watching %s (follow=%v)\n", watchFile, follow)
 				fmt.Printf("Alert feed: http://%s/api/v1/alerts/stream\n", addr)
 			}
 			fmt.Println("Press Ctrl+C to stop.")
 
-			srv := &http.Server{Addr: addr, Handler: mux}
+			srv := &http.Server{
+				Addr:    addr,
+				Handler: mux,
+				// No WriteTimeout: SSE streams stay open indefinitely by
+				// design. Header/body reads are still bounded.
+				ReadHeaderTimeout: 10 * time.Second,
+				ReadTimeout:       30 * time.Second,
+				IdleTimeout:       120 * time.Second,
+			}
 			go func() {
 				sig := make(chan os.Signal, 1)
 				signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -82,7 +116,37 @@ Example:
 	cmd.Flags().StringVar(&watchFile, "watch", "", "enable runtime detection from a JSONL events file")
 	cmd.Flags().BoolVar(&follow, "follow", false, "tail the events file for new entries")
 	cmd.Flags().IntVar(&interval, "interval", 1, "poll interval for --follow (seconds)")
+	cmd.Flags().StringVar(&apiToken, "token", "", "require this bearer token for API access (recommended when binding beyond loopback)")
 	return cmd
+}
+
+// securityHeaders sets the content-security-policy and related headers.
+// All dashboard assets are self-hosted (no CDN), so script-src is
+// limited to same-origin.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLoopbackAddr reports whether the address binds to loopback only.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // startWatchTail tails an events file through the runtime detector in a
@@ -100,7 +164,8 @@ func startWatchTail(g *graph.Graph, watchFile string, follow bool, interval int,
 		defer f.Close()
 
 		det := rt.New(g, paths.Options{})
-		_, alerts, err := drainEvents(f, det)
+		tailer := &eventTailer{}
+		_, alerts, err := tailer.drain(f, det)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: watch: %v\n", err)
 			return
@@ -120,7 +185,7 @@ func startWatchTail(g *graph.Graph, watchFile string, follow bool, interval int,
 			case <-done:
 				return
 			case <-ticker.C:
-				_, alerts, err := drainEvents(f, det)
+				_, alerts, err := tailer.drain(f, det)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error: watch: %v\n", err)
 					return

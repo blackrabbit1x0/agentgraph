@@ -13,11 +13,15 @@ type CutResult struct {
 	Agent  string
 	Target string
 	// CutEdges is the minimum set of edges to remove to disconnect
-	// agent from target.
+	// agent from target. When parallel relationship types connect a cut
+	// node pair, all of them are included (removing one is not enough).
 	CutEdges []*graph.Edge
 	// PathsConsidered is the number of enumerated attack paths used to
 	// weight edge capacity.
 	PathsConsidered int
+	// Truncated is true when path enumeration hit the MaxPaths cap; the
+	// cut is then computed from a partial path set.
+	Truncated bool
 }
 
 // Mincut computes a small edge cut separating agent from target using
@@ -43,7 +47,8 @@ func Mincut(g *graph.Graph, agentID, targetID string, opts paths.Options) (*CutR
 	}
 	opts.TargetID = targetID
 
-	ps, _ := paths.Enumerate(g, agentID, opts)
+	ps, enumErr := paths.Enumerate(g, agentID, opts)
+	truncated := enumErr != nil
 
 	// Edge usage counts across enumerated paths (weights capacity).
 	type edgeID struct{ src, tgt, typ string }
@@ -142,15 +147,28 @@ func Mincut(g *graph.Graph, agentID, targetID string, opts paths.Options) (*CutR
 		}
 	}
 
-	// Cut edges: saturated edges leaving the reachable set.
+	// Cut edges: saturated edges leaving the reachable set. Because the
+	// network aggregates parallel graph edges per node pair, a saturated
+	// network edge means the PAIR must be severed - removing only one of
+	// several parallel relationship types would leave the others intact
+	// and the target still reachable. All graph edges of the cut pair
+	// are therefore returned.
 	var cut []*graph.Edge
+	seen := map[edgeID]bool{}
 	for u, edges := range net {
 		if !reachable[u] {
 			continue
 		}
 		for _, fe := range edges {
-			if fe.orig != nil && fe.cap == 0 && !reachable[fe.to] {
-				cut = append(cut, fe.orig)
+			if fe.cap != 0 || reachable[fe.to] || fe.orig == nil {
+				continue
+			}
+			for _, e := range g.EdgeBetween(u, fe.to) {
+				id := edgeID{e.Source, e.Target, string(e.Type)}
+				if !seen[id] {
+					seen[id] = true
+					cut = append(cut, e)
+				}
 			}
 		}
 	}
@@ -170,6 +188,7 @@ func Mincut(g *graph.Graph, agentID, targetID string, opts paths.Options) (*CutR
 		Target:          tgt.ID,
 		CutEdges:        cut,
 		PathsConsidered: len(ps),
+		Truncated:       truncated,
 	}, nil
 }
 

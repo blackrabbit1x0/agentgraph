@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -131,6 +132,84 @@ secrets:
 	}
 	if len(warnings) != 2 {
 		t.Fatalf("expected 2 redaction warnings, got %v", warnings)
+	}
+}
+
+func TestSecretRedactionAllNodeTypesAndEdges(t *testing.T) {
+	// Regression: a secret pasted into a non-SECRET node's metadata or an
+	// edge's metadata must also be redacted, with key normalization
+	// covering camelCase, kebab-case, and compound names.
+	cfg := `
+agents:
+  - id: a
+    metadata:
+      apiKey: "AKIA123"
+      auth_token: "tok"
+      client-secret: "cs"
+      environment: production
+relationships:
+  - source: a
+    target: m
+    type: USES
+    metadata:
+      api_key: "AKIA456"
+      note: benign
+nodes:
+  - id: m
+    type: mcp_server
+`
+	g, warnings, err := LoadFromBytes([]byte(cfg))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	n, _ := g.Node("a")
+	for _, forbidden := range []string{"apiKey", "auth_token", "client-secret"} {
+		if _, ok := n.Metadata[forbidden]; ok {
+			t.Errorf("agent metadata field %q must be redacted", forbidden)
+		}
+	}
+	if _, ok := n.Metadata["environment"]; !ok {
+		t.Error("benign agent metadata must be preserved")
+	}
+	e := g.EdgeBetween("a", "m")
+	if len(e) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(e))
+	}
+	if _, ok := e[0].Metadata["api_key"]; ok {
+		t.Error("edge metadata api_key must be redacted")
+	}
+	if _, ok := e[0].Metadata["note"]; !ok {
+		t.Error("benign edge metadata must be preserved")
+	}
+	if len(warnings) != 4 {
+		t.Fatalf("expected 4 redaction warnings, got %v", warnings)
+	}
+
+	// Nothing sensitive anywhere in the serialized graph.
+	b, _ := json.Marshal(g.Snapshot())
+	for _, needle := range []string{"AKIA123", "AKIA456", "\"tok\"", "\"cs\""} {
+		if strings.Contains(string(b), needle) {
+			t.Errorf("sensitive value %s leaked into the graph", needle)
+		}
+	}
+}
+
+func TestSecretNodeAggressiveRedaction(t *testing.T) {
+	// SECRET nodes get substring matching: any key mentioning secrets.
+	cfg := `
+secrets:
+  - id: s
+    metadata:
+      signing_key_material: "xyz"
+      refresh_token_value: "abc"
+`
+	g, _, err := LoadFromBytes([]byte(cfg))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	n, _ := g.Node("s")
+	if len(n.Metadata) != 0 {
+		t.Fatalf("SECRET node keys mentioning secrets must all be redacted, kept: %v", n.Metadata)
 	}
 }
 

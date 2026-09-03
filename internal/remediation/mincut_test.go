@@ -42,6 +42,48 @@ func diamond() *graph.Graph {
 	return g
 }
 
+func TestMincutParallelEdges(t *testing.T) {
+	// Regression: when two relationship types connect the cut node pair
+	// (e.g. USES + CAN_READ), the cut must sever BOTH - a single edge
+	// leaves the target reachable through the other.
+	g := graph.New()
+	nodes := []*graph.Node{
+		{ID: "agent", Type: graph.NodeAIAgent, Name: "agent"},
+		{ID: "mcp", Type: graph.NodeMCPServer, Name: "mcp"},
+		{ID: "db", Type: graph.NodeDatabase, Name: "db", Criticality: 90},
+	}
+	for _, n := range nodes {
+		if err := g.AddNode(n); err != nil {
+			panic(err)
+		}
+	}
+	for _, e := range []*graph.Edge{
+		{Source: "agent", Target: "mcp", Type: graph.EdgeUses, Confidence: 1},
+		{Source: "agent", Target: "mcp", Type: graph.EdgeCanRead, Confidence: 1},
+		{Source: "mcp", Target: "db", Type: graph.EdgeCanAccess, Confidence: 1},
+	} {
+		if err := g.AddEdge(e); err != nil {
+			panic(err)
+		}
+	}
+
+	res, err := Mincut(g, "agent", "db", paths.Options{})
+	if err != nil {
+		t.Fatalf("mincut: %v", err)
+	}
+	if len(res.CutEdges) < 2 {
+		t.Fatalf("parallel agent->mcp edges both belong to the cut, got %d: %v",
+			len(res.CutEdges), res.CutEdges)
+	}
+	// Applying the full cut must disconnect.
+	for _, e := range res.CutEdges {
+		g.RemoveEdge(e.Source, e.Target, e.Type)
+	}
+	if shortestPathExists(g, "agent", "db") {
+		t.Fatal("target still reachable after applying the cut")
+	}
+}
+
 func TestMincutSeversAllBranches(t *testing.T) {
 	g := diamond()
 	res, err := Mincut(g, "agent", "db", paths.Options{})

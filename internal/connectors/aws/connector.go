@@ -97,6 +97,8 @@ type Options struct {
 // Connector discovers AWS infrastructure.
 type Connector struct {
 	opts Options
+	// account is the scanned account, resolved during Discover.
+	account string
 }
 
 // New returns an AWS connector.
@@ -119,6 +121,7 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 	if err != nil {
 		return nil, fmt.Errorf("aws connector: get caller identity: %w", err)
 	}
+	c.account = account
 
 	caller := &graph.Node{
 		ID:       idIdentity + callerARN,
@@ -126,10 +129,12 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 		Name:     callerName,
 		Provider: "aws",
 		Metadata: map[string]any{
-			"account":        account,
-			"arn":            callerARN,
-			"identity_type":  "iam_user_or_role",
-			"privilege":      "admin",
+			"account":       account,
+			"arn":           callerARN,
+			"identity_type": "iam_user_or_role",
+			// The scanning principal is expected to be read-only; its
+			// own privilege is not claimed to be admin.
+			"privilege":      "read",
 			"read_only_scan": true,
 		},
 	}
@@ -331,7 +336,7 @@ func (c *Connector) accountID() string {
 	if c.opts.AccountID != "" {
 		return c.opts.AccountID
 	}
-	return ""
+	return c.account
 }
 
 func identityTypeForARN(arn string) string {

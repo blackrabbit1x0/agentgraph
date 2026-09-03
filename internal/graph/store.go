@@ -236,3 +236,48 @@ func (g *Graph) HasEdge(source, target string, t EdgeType) bool {
 	}
 	return false
 }
+
+// Clone returns a deep copy of the graph: nodes and edges are copied by
+// value, and the copy shares no pointers with the original. Mutating the
+// clone (e.g., removing edges for what-if analysis) never affects the
+// served graph.
+func (g *Graph) Clone() *Graph {
+	c := &Graph{
+		nodes: make(map[string]*Node, len(g.nodes)),
+		edges: make([]*Edge, 0, len(g.edges)),
+		out:   make(map[string]map[string][]*Edge),
+		in:    make(map[string]map[string][]*Edge),
+	}
+	for _, n := range g.nodes {
+		cp := *n
+		// Deep-copy metadata so map mutations don't leak across.
+		if n.Metadata != nil {
+			meta := make(map[string]any, len(n.Metadata))
+			for k, v := range n.Metadata {
+				meta[k] = v
+			}
+			cp.Metadata = meta
+		}
+		c.nodes[n.ID] = &cp
+	}
+	for _, e := range g.edges {
+		cp := *e
+		if e.Metadata != nil {
+			meta := make(map[string]any, len(e.Metadata))
+			for k, v := range e.Metadata {
+				meta[k] = v
+			}
+			cp.Metadata = meta
+		}
+		c.edges = append(c.edges, &cp)
+		if c.out[cp.Source] == nil {
+			c.out[cp.Source] = map[string][]*Edge{}
+		}
+		c.out[cp.Source][cp.Target] = append(c.out[cp.Source][cp.Target], &cp)
+		if c.in[cp.Target] == nil {
+			c.in[cp.Target] = map[string][]*Edge{}
+		}
+		c.in[cp.Target][cp.Source] = append(c.in[cp.Target][cp.Source], &cp)
+	}
+	return c
+}

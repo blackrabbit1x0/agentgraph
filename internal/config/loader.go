@@ -62,10 +62,52 @@ type Config struct {
 	Edges         []EdgeDef `yaml:"edges"`
 }
 
-// forbiddenSecretFields must never be stored on SECRET nodes.
-var forbiddenSecretFields = []string{
-	"value", "secret", "secret_value", "plaintext", "token", "password",
-	"api_key", "access_key", "private_key", "credential",
+// forbiddenExact lists metadata keys (after normalization: lowercased,
+// non-alphanumerics stripped) whose values are never stored, on any node
+// type or edge.
+var forbiddenExact = map[string]bool{
+	"value": true, "secret": true, "secretvalue": true, "plaintext": true,
+	"token": true, "password": true, "passwd": true, "passphrase": true,
+	"apikey": true, "accesskey": true, "privatekey": true, "credential": true,
+	"clientsecret": true, "authtoken": true, "accesstoken": true,
+	"refreshtoken": true, "signingkey": true, "connectionstring": true,
+}
+
+// forbiddenSubstring applies to SECRET-type nodes only, where any key
+// mentioning secrets is treated as sensitive.
+var forbiddenSubstring = []string{"secret", "token", "password", "passwd", "passphrase",
+	"api_key", "apikey", "access_key", "private_key", "credential", "plaintext", "value",
+	"signing", "seed", "hmac"}
+
+// normalizeKey lowercases and strips non-alphanumeric characters so
+// apiKey, api_key, and api-key all match.
+func normalizeKey(key string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(key) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isForbiddenSecretField reports whether a metadata key must be redacted.
+// For SECRET nodes, aggressive substring matching applies; for every
+// other node type (and edges), exact normalized matching applies.
+func isForbiddenSecretField(key string, secretNode bool) bool {
+	k := normalizeKey(key)
+	if forbiddenExact[k] {
+		return true
+	}
+	if secretNode {
+		nk := strings.ToLower(key)
+		for _, sub := range forbiddenSubstring {
+			if strings.Contains(nk, sub) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Load reads and validates a configuration file, returning the built graph.
@@ -171,7 +213,6 @@ func (c *Config) feedAssembler(asm *graph.Assembler, warnings *[]string) error {
 			Target:     ed.Target,
 			Confidence: ed.Confidence,
 			Risk:       ed.Risk,
-			Metadata:   ed.Metadata,
 			Provenance: graph.Provenance{
 				Connector:    ed.Connector,
 				SourceObject: ed.SourceObject,
@@ -184,6 +225,17 @@ func (c *Config) feedAssembler(asm *graph.Assembler, warnings *[]string) error {
 		e.Type = graph.EdgeType(strings.ToUpper(ed.Type))
 		if e.Confidence == 0 {
 			e.Confidence = 1.0
+		}
+		// Edge metadata is subject to the same redaction as nodes.
+		for k := range ed.Metadata {
+			if isForbiddenSecretField(k, false) {
+				delete(ed.Metadata, k)
+				*warnings = append(*warnings,
+					fmt.Sprintf("redacted forbidden field %q on relationship %s -> %s (secret values must never be stored)", k, ed.Source, ed.Target))
+			}
+		}
+		if len(ed.Metadata) > 0 {
+			e.Metadata = ed.Metadata
 		}
 		asm.AddEdge(e)
 	}
@@ -207,21 +259,21 @@ func addNode(asm *graph.Assembler, def NodeDef, t graph.NodeType, warnings *[]st
 		return fmt.Errorf("%s section contains a node without an id", t)
 	}
 	meta := def.Metadata
-	if t == graph.NodeSecret {
-		var cleaned map[string]any
-		for k, v := range meta {
-			if isForbiddenSecretField(k) {
-				*warnings = append(*warnings,
-					fmt.Sprintf("redacted forbidden field %q on secret node %q (secret values must never be stored)", k, def.ID))
-				continue
-			}
-			if cleaned == nil {
-				cleaned = map[string]any{}
-			}
-			cleaned[k] = v
+	// Redaction applies to every node type, not just SECRET nodes:
+	// a secret pasted into an agent's metadata is still a secret.
+	var cleaned map[string]any
+	for k, v := range meta {
+		if isForbiddenSecretField(k, t == graph.NodeSecret) {
+			*warnings = append(*warnings,
+				fmt.Sprintf("redacted forbidden field %q on %s node %q (secret values must never be stored)", k, t, def.ID))
+			continue
 		}
-		meta = cleaned
+		if cleaned == nil {
+			cleaned = map[string]any{}
+		}
+		cleaned[k] = v
 	}
+	meta = cleaned
 	n := &graph.Node{
 		ID:          def.ID,
 		Type:        t,
@@ -238,14 +290,4 @@ func addNode(asm *graph.Assembler, def NodeDef, t graph.NodeType, warnings *[]st
 		return fmt.Errorf("%s node: %w", t, err)
 	}
 	return nil
-}
-
-func isForbiddenSecretField(key string) bool {
-	k := strings.ToLower(key)
-	for _, f := range forbiddenSecretFields {
-		if k == f {
-			return true
-		}
-	}
-	return false
 }

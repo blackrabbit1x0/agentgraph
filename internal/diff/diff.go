@@ -93,10 +93,14 @@ func edgeKeyOf(e *graph.Edge) edgeKey {
 	return edgeKey{e.Source, string(e.Type), e.Target}
 }
 
-// Compute compares two snapshots. Paths are enumerated with default
-// options from every AI agent.
+// Compute compares two snapshots. Paths are enumerated from every AI
+// agent with a raised MaxPaths cap: a diff built from truncated path
+// sets could otherwise report spurious new/gone paths. Truncation is
+// surfaced in the returned error when it occurs.
 func Compute(oldG, newG *graph.Graph) (*Report, error) {
 	r := &Report{}
+
+	diffOpts := paths.Options{MaxPaths: 100000}
 
 	// Node diff.
 	oldNodes := map[string]bool{}
@@ -135,11 +139,11 @@ func Compute(oldG, newG *graph.Graph) (*Report, error) {
 	}
 
 	// Path set diff.
-	oldPaths, err := paths.EnumerateAll(oldG, paths.Options{})
+	oldPaths, err := paths.EnumerateAll(oldG, diffOpts)
 	if err != nil {
 		return nil, err
 	}
-	newPaths, err := paths.EnumerateAll(newG, paths.Options{})
+	newPaths, err := paths.EnumerateAll(newG, diffOpts)
 	if err != nil {
 		return nil, err
 	}

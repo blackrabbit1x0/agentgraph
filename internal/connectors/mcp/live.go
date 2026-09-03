@@ -40,7 +40,15 @@ func (HTTPLister) ListTools(ctx context.Context, server ServerDef, timeoutSecond
 	if server.URL == "" {
 		return nil, fmt.Errorf("no url")
 	}
-	client := &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second}
+	client := &http.Client{
+		Timeout: time.Duration(timeoutSeconds) * time.Second,
+		// Redirects are denied outright: the MCP endpoint is a specific
+		// host, and following server-controlled redirects would turn the
+		// scanner into an open proxy.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 

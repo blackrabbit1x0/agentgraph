@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/blackrabbit1x0/agentgraph/internal/diff"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
+	"github.com/blackrabbit1x0/agentgraph/internal/paths"
 	"github.com/spf13/cobra"
 )
 
@@ -38,8 +40,12 @@ Example:
 
 			report, err := diff.Compute(oldG, newG)
 			if err != nil {
-				fmt.Printf("error: %v\n", err)
-				return
+				if _, ok := err.(*paths.TruncatedError); ok {
+					fmt.Fprintf(os.Stderr, "warning: %v (diff may be partial)\n", err)
+				} else {
+					fmt.Printf("error: %v\n", err)
+					return
+				}
 			}
 			printDiff(report)
 		},

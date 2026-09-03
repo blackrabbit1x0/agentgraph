@@ -112,6 +112,10 @@ type Recommendation struct {
 // Optimize recommends the single edge whose removal eliminates the most
 // attack paths from the given agent. Candidates are limited to the top
 // maxCandidates most-frequent edges to bound computation.
+//
+// The input graph is never mutated: what-if removals are applied to an
+// internal clone, so this function is safe to call on a shared,
+// concurrently-read graph (e.g., from the API server).
 func Optimize(g *graph.Graph, agentID string, opts paths.Options, maxCandidates int) (*Recommendation, error) {
 	if _, ok := g.Node(agentID); !ok {
 		return nil, fmt.Errorf("unknown node %q", agentID)
@@ -175,10 +179,12 @@ func Optimize(g *graph.Graph, agentID string, opts paths.Options, maxCandidates 
 	bestCrit := rec.CriticalBefore
 	bestPaths := rec.PathsBefore
 
+	// What-if analysis on a clone: the caller's graph is untouched.
+	work := g.Clone()
 	for _, cand := range cands {
-		g.RemoveEdge(cand.Edge.Source, cand.Edge.Target, cand.Edge.Type)
+		work.RemoveEdge(cand.Edge.Source, cand.Edge.Target, cand.Edge.Type)
 
-		after, err := paths.Enumerate(g, agentID, opts)
+		after, err := paths.Enumerate(work, agentID, opts)
 		if err != nil && !isTruncated(err) {
 			return nil, err
 		}
@@ -202,7 +208,7 @@ func Optimize(g *graph.Graph, agentID string, opts paths.Options, maxCandidates 
 			}
 		}
 
-		g.AddEdge(cand.Edge)
+		work.AddEdge(cand.Edge)
 	}
 
 	if rec.Edge == nil {

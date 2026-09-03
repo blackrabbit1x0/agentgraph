@@ -24,6 +24,7 @@ import (
 func newScanMCPCommand() *cobra.Command {
 	var live bool
 	var timeout int
+	var allowPrivate bool
 
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -38,15 +39,21 @@ URLs are redacted of sensitive query parameters.
 
 With --live, HTTP/SSE servers are queried via the MCP protocol
 (initialize -> tools/list) to inventory their tools. No tool is ever
-called.`,
+called. Egress policy: servers configured in your global config
+directories (Claude Desktop, Cursor global, opencode global) may live on
+private hosts; servers configured by files in the working directory -
+which may come from an untrusted repository - are only queried on
+public hosts, and cross-host redirects are always denied. Use
+--allow-private to query private hosts from project configs too.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			c := mcp.New(mcp.Options{Live: live, TimeoutSeconds: timeout})
+			c := mcp.New(mcp.Options{Live: live, TimeoutSeconds: timeout, AllowPrivate: allowPrivate})
 			g := runScanConnectors([]connectors.Connector{c})
 			printDashboard(g)
 		},
 	}
 	cmd.Flags().BoolVar(&live, "live", false, "query HTTP/SSE servers for their tool lists")
 	cmd.Flags().IntVar(&timeout, "timeout", 5, "per-server timeout for live queries (seconds)")
+	cmd.Flags().BoolVar(&allowPrivate, "allow-private", false, "allow live queries to private hosts from project-directory configs")
 	return cmd
 }
 

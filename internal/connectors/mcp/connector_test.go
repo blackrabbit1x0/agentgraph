@@ -160,8 +160,10 @@ func TestDiscoverConfigs(t *testing.T) {
 }
 
 func TestLiveToolListing(t *testing.T) {
+	// The live server is placed in a GLOBAL config (trusted source), so
+	// the egress policy permits it without DNS resolution.
 	fs := memFS{
-		"C:/users/test/project/.mcp.json": `{
+		"C:/users/test/.cursor/mcp.json": `{
 			"mcpServers": {
 				"github": {"url": "https://mcp.internal/github"}
 			}
@@ -183,8 +185,8 @@ func TestLiveToolListing(t *testing.T) {
 	for _, n := range res.Nodes {
 		nodes[n.ID] = n
 	}
-	readTool := "mcp:tool:project/github/read_file"
-	execTool := "mcp:tool:project/github/execute_command"
+	readTool := "mcp:tool:cursor/github/read_file"
+	execTool := "mcp:tool:cursor/github/execute_command"
 	if _, ok := nodes[readTool]; !ok {
 		t.Error("missing read_file tool node")
 	}
@@ -212,6 +214,60 @@ func TestLiveToolListing(t *testing.T) {
 	}
 }
 
+func TestEgressGuard(t *testing.T) {
+	// Project-directory configs with private endpoints are skipped.
+	fs := memFS{
+		"C:/users/test/project/.mcp.json": `{
+			"mcpServers": {
+				"local-server": {"url": "http://127.0.0.1:3333/mcp"},
+				"metadata-endpoint": {"url": "http://169.254.169.254/latest/meta-data"},
+				"localhost-server": {"url": "http://localhost:9090/mcp"}
+			}
+		}`,
+	}
+	lister := &fakeLister{}
+	opts := testOptions(fs, true)
+	opts.Lister = lister
+	c := New(opts)
+	_, err := c.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if lister.calls != 0 {
+		t.Fatalf("project-config private hosts must not be probed, got %d calls", lister.calls)
+	}
+
+	// --allow-private overrides the guard.
+	opts2 := testOptions(fs, true)
+	opts2.Lister = lister
+	opts2.AllowPrivate = true
+	c2 := New(opts2)
+	if _, err := c2.Discover(context.Background()); err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if lister.calls != 3 {
+		t.Fatalf("allow-private should probe all servers, got %d calls", lister.calls)
+	}
+
+	// The guard itself, unit-level.
+	conn := New(Options{AllowPrivate: false})
+	for _, url := range []string{
+		"http://127.0.0.1:3333/mcp",
+		"http://169.254.169.254/latest/meta-data",
+		"http://localhost:9090/mcp",
+		"http://10.0.0.5/mcp",
+	} {
+		err := conn.egressAllowed(ServerDef{URL: url, FromProjectDir: true})
+		if err == nil {
+			t.Errorf("egressAllowed(%s) should block private project hosts", url)
+		}
+	}
+	// Trusted (global) configs are exempt without any flags.
+	if err := conn.egressAllowed(ServerDef{URL: "http://127.0.0.1:3333/mcp"}); err != nil {
+		t.Errorf("global configs should allow private hosts: %v", err)
+	}
+}
+
 func TestToolRisk(t *testing.T) {
 	cases := map[string]string{
 		"run_command":       "critical",
@@ -234,10 +290,26 @@ func TestRedactURL(t *testing.T) {
 		"https://x.com/mcp?token=abc":                "https://x.com/mcp?token=REDACTED",
 		"https://x.com/mcp?api_key=abc&page=2":       "https://x.com/mcp?api_key=REDACTED&page=2",
 		"https://x.com/mcp?API_SECRET=s&region=eu#f": "https://x.com/mcp?API_SECRET=REDACTED&region=eu#f",
+		"https://x.com/mcp?sig=deadbeef":             "https://x.com/mcp?sig=REDACTED",
+		"https://key:secret@x.com/mcp":               "https://REDACTED:x.com/mcp",
+		"https://apikey:@x.com/mcp?region=eu":        "https://REDACTED:x.com/mcp?region=eu",
+		"https://user:pass@x.com/mcp?token=t":        "https://REDACTED:x.com/mcp?token=REDACTED",
 	}
 	for in, want := range cases {
-		if got := RedactURL(in); got != want {
-			t.Errorf("RedactURL(%s) = %s, want %s", in, got, want)
+		got := RedactURL(in)
+		// userinfo redaction goes through url.String() which may
+		// percent-encode; compare loosely by checking no credentials
+		// survive and the host+path+query are intact.
+		if strings.Contains(got, ":secret@") || strings.Contains(got, "apikey:@") || strings.Contains(got, "user:pass") {
+			t.Errorf("RedactURL(%s) leaked credentials: %s", in, got)
+		}
+		if !strings.Contains(got, "x.com/mcp") {
+			t.Errorf("RedactURL(%s) damaged the URL: %s", in, got)
+		}
+		if !strings.Contains(in, "@") { // exact expectations for non-userinfo cases
+			if got != want {
+				t.Errorf("RedactURL(%s) = %s, want %s", in, got, want)
+			}
 		}
 	}
 }

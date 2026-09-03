@@ -42,6 +42,8 @@ jobs:
               tar -C dist -czf "dist/${name}.tar.gz" "${name}" && rm "dist/${name}"
             fi
           done
+          # Integrity: publish checksums for every artifact.
+          (cd dist && sha256sum * > SHA256SUMS)
           ls -la dist/
 
       - name: Create release
