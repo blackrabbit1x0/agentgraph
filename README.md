@@ -154,6 +154,17 @@ variable metadata. The GitLab variables API returns values — this
 connector drops them at the parse boundary and stores only names and
 protection flags (enforced by test).
 
+**Slack** (read-only token, `SLACK_TOKEN` or `--token`):
+
+```bash
+./agentgraph scan slack --save graph.json
+```
+
+Discovers the authenticated identity, channels with membership,
+workspace users, and the token's app scopes. Membership + `chat:write`
+implies write access to a channel. Message content is never fetched;
+the token travels in the Authorization header only and is never stored.
+
 **Kubernetes** (read-only API discovery):
 
 ```bash
@@ -168,7 +179,7 @@ kubeconfig, or the in-cluster service account environment.
 **Combine everything:**
 
 ```bash
-./agentgraph scan github aws mcp gitlab kubernetes --save graph.json
+./agentgraph scan github aws mcp gitlab slack kubernetes --save graph.json
 ```
 
 Then analyze or serve the saved graph:
@@ -581,7 +592,7 @@ internal/attack/           MITRE ATT&CK + agent-attack taxonomy mapping
 internal/svg/              static + animated SVG graph rendering
 internal/store/            graph persistence (memory, Neo4j)
 internal/config/           YAML static connector
-internal/connectors/       GitHub, GitLab, AWS, MCP, Kubernetes discovery
+internal/connectors/       GitHub, GitLab, Slack, AWS, MCP, Kubernetes
 internal/api/              REST API + embedded web dashboard
 internal/cli/              CLI commands + embedded demo environment
 ```
@@ -635,8 +646,8 @@ See [SECURITY.md](SECURITY.md) for the reporting policy.
   Manager, S3, RDS, Lambda)
 - **Phase 3 — Remediation** ✅ (minimum-cut analysis, policy engine)
 - **Phase 4 — Historical graph** ✅ (snapshot diff with path attribution)
-- **Phase 5 — Enterprise identity** 🚧 (Kubernetes + GitLab ✅; Entra ID,
-  Slack, Okta, Vault next)
+- **Phase 5 — Enterprise identity** 🚧 (Kubernetes + GitLab + Slack ✅;
+  Entra ID, Okta, Vault next)
 - **Research — EDR for AI agents** 🚧 (runtime attack-path execution
   detection: `agentgraph watch`; probabilistic paths ✅; next: behavior
   graphs)

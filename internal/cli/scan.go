@@ -12,6 +12,7 @@ import (
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/gitlab"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/kubernetes"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/mcp"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/slack"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
 	"github.com/blackrabbit1x0/agentgraph/internal/remediation"
@@ -127,6 +128,38 @@ boundary and stores only names and protection flags.`,
 	return cmd
 }
 
+func newScanSlackCommand() *cobra.Command {
+	var baseURL, token string
+
+	cmd := &cobra.Command{
+		Use:   "slack",
+		Short: "Discover Slack identity, channels, users, and bot scopes",
+		Long: `Discover Slack workspace data via a read-only token
+(SLACK_TOKEN or --token).
+
+Discovers the authenticated identity, channels with membership,
+workspace users, and the token's app scopes. Membership + chat:write
+implies write access to a channel. Message content is never fetched;
+the token is sent in the Authorization header only and never stored.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if token == "" {
+				token = os.Getenv("SLACK_TOKEN")
+			}
+			api, err := slack.NewRestAPI(baseURL, token)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			c := slack.New(slack.Options{API: api})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().StringVar(&baseURL, "url", "https://slack.com", "Slack base URL (Enterprise Grid supported)")
+	cmd.Flags().StringVar(&token, "token", "", "Slack token, xoxb or xoxp (read-only)")
+	return cmd
+}
+
 func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [connector...]",
@@ -146,7 +179,7 @@ Examples:
 			printDashboard(g)
 		},
 	}
-	cmd.AddCommand(newScanGithubCommand(), newScanGitlabCommand(), newScanAWSCommand(), newScanMCPCommand(), newScanKubernetesCommand())
+	cmd.AddCommand(newScanGithubCommand(), newScanGitlabCommand(), newScanSlackCommand(), newScanAWSCommand(), newScanMCPCommand(), newScanKubernetesCommand())
 	return cmd
 }
 
@@ -250,6 +283,18 @@ func runScan(args []string) *graph.Graph {
 				os.Exit(1)
 			}
 			conns = append(conns, gitlab.New(gitlab.Options{API: api}))
+		case "slack":
+			stoken := os.Getenv("SLACK_TOKEN")
+			if stoken == "" {
+				fmt.Println("error: SLACK_TOKEN not set (for full options run: agentgraph scan slack)")
+				os.Exit(1)
+			}
+			sapi, serr := slack.NewRestAPI("https://slack.com", stoken)
+			if serr != nil {
+				fmt.Printf("error: %v\n", serr)
+				os.Exit(1)
+			}
+			conns = append(conns, slack.New(slack.Options{API: sapi}))
 		case "mcp":
 			conns = append(conns, mcp.New(mcp.Options{}))
 		case "kubernetes":
@@ -260,7 +305,7 @@ func runScan(args []string) *graph.Graph {
 			}
 			conns = append(conns, kubernetes.New(kubernetes.Options{API: api}))
 		default:
-			fmt.Printf("error: unknown connector %q (available: github, aws, mcp, kubernetes)\n", name)
+			fmt.Printf("error: unknown connector %q (available: github, gitlab, slack, aws, mcp, kubernetes)\n", name)
 			os.Exit(1)
 		}
 	}
