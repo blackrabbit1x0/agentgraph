@@ -33,19 +33,19 @@ const (
 
 // Channel is a discovered conversation (public/private channel, DM).
 type Channel struct {
-	ID         string
-	Name       string
-	Kind       string // channel | group | im
-	IsMember   bool   // caller is a member/users can post
-	MemberIDs  []string
+	ID        string
+	Name      string
+	Kind      string // channel | group | im
+	IsMember  bool   // caller is a member/users can post
+	MemberIDs []string
 }
 
 // User is a discovered workspace user or bot.
 type User struct {
-	ID      string
-	Name    string
+	ID       string
+	Name     string
 	RealName string
-	IsBot   bool
+	IsBot    bool
 }
 
 // API abstracts the Slack Web API calls the connector needs.
@@ -93,9 +93,9 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 		return nil, fmt.Errorf("slack connector: auth.test: %w", err)
 	}
 	self := &graph.Node{
-		ID:   idIdentity + userID,
-		Type: graph.NodeIdentity,
-		Name: userName,
+		ID:       idIdentity + userID,
+		Type:     graph.NodeIdentity,
+		Name:     userName,
 		Provider: "slack",
 		Metadata: map[string]any{
 			"user_id":       userID,
@@ -127,9 +127,9 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 			identityType = "bot"
 		}
 		res.Nodes = append(res.Nodes, &graph.Node{
-			ID:   idIdentity + u.ID,
-			Type: graph.NodeIdentity,
-			Name: displayName(u),
+			ID:       idIdentity + u.ID,
+			Type:     graph.NodeIdentity,
+			Name:     displayName(u),
 			Provider: "slack",
 			Metadata: map[string]any{
 				"user_id":       u.ID,
@@ -159,8 +159,8 @@ func (c *Connector) Discover(ctx context.Context) (*connectors.DiscoveryResult, 
 			Provider:    "slack",
 			Criticality: criticality,
 			Metadata: map[string]any{
-				"channel_id":    ch.ID,
-				"kind":          ch.Kind,
+				"channel_id":     ch.ID,
+				"kind":           ch.Kind,
 				"classification": "workspace_communications",
 			},
 		})
@@ -305,11 +305,11 @@ func (a *RestAPI) get(ctx context.Context, method string, query url.Values, out 
 // AuthTest implements API.
 func (a *RestAPI) AuthTest(ctx context.Context) (string, string, string, string, error) {
 	var out struct {
-		UserID   string `json:"user_id"`
-		User     string `json:"user"`
-		TeamID   string `json:"team_id"`
-		Team     string `json:"team"`
-		IsBot    bool   `json:"is_bot"`
+		UserID string `json:"user_id"`
+		User   string `json:"user"`
+		TeamID string `json:"team_id"`
+		Team   string `json:"team"`
+		IsBot  bool   `json:"is_bot"`
 	}
 	if err := a.get(ctx, "auth.test", nil, &out); err != nil {
 		return "", "", "", "", err

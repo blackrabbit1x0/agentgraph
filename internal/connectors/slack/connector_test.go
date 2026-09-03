@@ -196,9 +196,9 @@ func TestNewRestAPIRequiresToken(t *testing.T) {
 
 func TestScopesPrivilege(t *testing.T) {
 	cases := map[string]string{
-		"admin":       "admin",
-		"chat:write": "write",
-		"files:write": "write",
+		"admin":         "admin",
+		"chat:write":    "write",
+		"files:write":   "write",
 		"channels:read": "read",
 	}
 	for scope, want := range cases {
