@@ -9,6 +9,7 @@ import (
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/aws"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/github"
+	"github.com/blackrabbit1x0/agentgraph/internal/connectors/kubernetes"
 	"github.com/blackrabbit1x0/agentgraph/internal/connectors/mcp"
 	"github.com/blackrabbit1x0/agentgraph/internal/graph"
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
@@ -48,6 +49,45 @@ called.`,
 	return cmd
 }
 
+func newScanKubernetesCommand() *cobra.Command {
+	var server, token, kubeconfig string
+	var insecure bool
+
+	cmd := &cobra.Command{
+		Use:   "kubernetes",
+		Short: "Discover Kubernetes pods, service accounts, RBAC, and secret metadata",
+		Long: `Discover Kubernetes infrastructure via read-only API calls:
+pods and their service accounts, RBAC roles/bindings (with verb-derived
+privilege levels), and secret metadata.
+
+Access is resolved from --server/--token flags, a kubeconfig
+(--kubeconfig, default ~/.kube/config), or in-cluster service account
+environment. Secret values are never read.
+
+Discovered node IDs (e.g. k8s:sa:prod/payments-deployer) can be
+referenced from agentgraph.yaml relationships.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			api, err := kubernetes.LoadRestAPI(cmd.Context(), kubernetes.RestOptions{
+				Server:                server,
+				Token:                 token,
+				InsecureSkipTLSVerify: insecure,
+			}, kubeconfig)
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			c := kubernetes.New(kubernetes.Options{API: api})
+			g := runScanConnectors([]connectors.Connector{c})
+			printDashboard(g)
+		},
+	}
+	cmd.Flags().StringVar(&server, "server", "", "Kubernetes API server URL")
+	cmd.Flags().StringVar(&token, "token", "", "bearer token (read-only)")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "path to kubeconfig (default ~/.kube/config)")
+	cmd.Flags().BoolVar(&insecure, "insecure-skip-tls-verify", false, "skip TLS verification")
+	return cmd
+}
+
 func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan [connector...]",
@@ -67,7 +107,7 @@ Examples:
 			printDashboard(g)
 		},
 	}
-	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand(), newScanMCPCommand())
+	cmd.AddCommand(newScanGithubCommand(), newScanAWSCommand(), newScanMCPCommand(), newScanKubernetesCommand())
 	return cmd
 }
 
@@ -161,8 +201,15 @@ func runScan(args []string) *graph.Graph {
 			conns = append(conns, aws.New(aws.Options{API: api}))
 		case "mcp":
 			conns = append(conns, mcp.New(mcp.Options{}))
+		case "kubernetes":
+			api, err := kubernetes.LoadRestAPI(context.Background(), kubernetes.RestOptions{}, "")
+			if err != nil {
+				fmt.Printf("error: %v\n", err)
+				os.Exit(1)
+			}
+			conns = append(conns, kubernetes.New(kubernetes.Options{API: api}))
 		default:
-			fmt.Printf("error: unknown connector %q (available: github, aws)\n", name)
+			fmt.Printf("error: unknown connector %q (available: github, aws, mcp, kubernetes)\n", name)
 			os.Exit(1)
 		}
 	}

@@ -1,0 +1,8 @@
+services:
+  agentgraph:
+    build: .
+    ports:
+      - "8080:8080"
+    # Serves the built-in vulnerable demo environment:
+    #   http://localhost:8080
+    command: ["demo", "serve", "--addr", "0.0.0.0:8080"]

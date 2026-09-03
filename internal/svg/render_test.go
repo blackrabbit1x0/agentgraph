@@ -40,7 +40,7 @@ func buildRenderGraph() *graph.Graph {
 
 func TestRenderStructure(t *testing.T) {
 	g := buildRenderGraph()
-	out := Render(g, "AgentGraph: finance-agent", nil)
+	out := Render(g, "AgentGraph: finance-agent", nil, false)
 
 	// Well-formed SVG envelope.
 	if !strings.HasPrefix(out, "<?xml") || !strings.Contains(out, "<svg") || !strings.Contains(out, "</svg>") {
@@ -85,7 +85,7 @@ func TestRenderHighlight(t *testing.T) {
 		t.Fatal("expected a path to db")
 	}
 
-	out := Render(g, "highlighted", NewHighlight(target))
+	out := Render(g, "highlighted", NewHighlight(target), true)
 	if !strings.Contains(out, "#58a6ff") {
 		t.Error("highlight color missing")
 	}
@@ -102,7 +102,7 @@ func TestEscapeXML(t *testing.T) {
 }
 
 func TestRenderEmptyGraph(t *testing.T) {
-	out := Render(graph.New(), "empty", nil)
+	out := Render(graph.New(), "empty", nil, false)
 	if !strings.Contains(out, "<svg") {
 		t.Error("empty graph should still render an SVG")
 	}

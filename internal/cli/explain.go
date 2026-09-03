@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blackrabbit1x0/agentgraph/internal/attack"
 	"github.com/blackrabbit1x0/agentgraph/internal/paths"
 	"github.com/blackrabbit1x0/agentgraph/internal/risk"
 	"github.com/spf13/cobra"
@@ -35,6 +36,7 @@ enumeration settings; run "agentgraph paths" to list them.`,
 			}
 
 			res := risk.ScorePath(target.Nodes(), target.Edges(), target.Confidence)
+			analysis := attack.AnalyzePath(target)
 
 			fmt.Printf("%s exists because:\n\n", strings.ToUpper(target.ID))
 			nodes := target.Nodes()
@@ -53,6 +55,20 @@ enumeration settings; run "agentgraph paths" to list them.`,
 			risk.SortFactors(res.Factors)
 			for _, f := range res.Factors {
 				fmt.Printf("  %+4d  %-22s %s\n", f.Delta, f.Name, f.Reason)
+			}
+
+			// ATT&CK and agent-attack taxonomy (PRD sections 46-47).
+			if len(analysis.Techniques) > 0 {
+				fmt.Println("\nMITRE ATT&CK techniques:")
+				for _, tech := range analysis.Techniques {
+					fmt.Printf("  %-10s %s\n", tech.ID, tech.Name)
+				}
+			}
+			if len(analysis.AGTs) > 0 {
+				fmt.Println("\nAgent attack techniques:")
+				for _, agt := range analysis.AGTs {
+					fmt.Printf("  %-8s %s\n", agt.ID, agt.Name)
+				}
 			}
 		},
 	}

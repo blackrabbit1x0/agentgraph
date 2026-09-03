@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2118" height="366" viewBox="0 0 2118 366" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7681"/>
+</marker>
+<marker id="arrow-hl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/>
+</marker>
+<marker id="arrow-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="#f85149"/>
+</marker>
+</defs>
+<style>
+.hl-node { animation: ag-pulse 2.4s ease-in-out infinite; }
+.hl-edge { stroke-dasharray: 8 6; animation: ag-dash 1.2s linear infinite; }
+.hl-label { animation: ag-pulse 2.4s ease-in-out infinite; }
+@keyframes ag-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes ag-dash { to { stroke-dashoffset: -28; } }
+</style>
+<rect width="100%" height="100%" fill="#0d1117"/>
+<text x="24" y="34" fill="#e6edf3" font-size="18" font-weight="600">AgentGraph: finance-agent (top path risk 97/100)</text>
+<path d="M 1374.0 99.0 C 1419.0 99.0, 1419.0 99.0, 1462.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1419.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1419.0 96.0)">CAN_ACCESS</text>
+<path class="hl-edge" d="M 1374.0 99.0 C 1419.0 99.0, 1419.0 155.0, 1462.0 155.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="1419.0" y="124.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1419.0 124.0)">CAN_ADMIN</text>
+<path d="M 1374.0 99.0 C 1419.0 99.0, 1419.0 211.0, 1462.0 211.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1419.0" y="152.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1419.0 152.0)">CAN_ACCESS</text>
+<path class="hl-edge" d="M 1134.0 99.0 C 1179.0 99.0, 1179.0 99.0, 1222.0 99.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="1179.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1179.0 96.0)">AUTHENTICATES_AS</text>
+<path d="M 1614.0 99.0 C 1659.0 99.0, 1659.0 99.0, 1702.0 99.0" fill="none" stroke="#ffa657" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1659.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1659.0 96.0)">CONTAINS_SECRET</text>
+<path d="M 1614.0 99.0 C 1659.0 99.0, 1659.0 155.0, 1702.0 155.0" fill="none" stroke="#ffa657" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1659.0" y="124.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1659.0 124.0)">CONTAINS_SECRET</text>
+<path d="M 414.0 99.0 C 459.0 99.0, 459.0 99.0, 502.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="459.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 96.0)">CAN_READ</text>
+<path d="M 174.0 99.0 C 219.0 99.0, 219.0 99.0, 262.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 96.0)">USES</text>
+<path d="M 1134.0 155.0 C 1179.0 155.0, 1179.0 99.0, 1222.0 99.0" fill="none" stroke="#ffa657" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1179.0" y="124.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1179.0 124.0)">CAN_ASSUME</text>
+<path d="M 174.0 155.0 C 219.0 155.0, 219.0 155.0, 262.0 155.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="152.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 152.0)">USES</text>
+<path d="M 174.0 155.0 C 219.0 155.0, 219.0 211.0, 262.0 211.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="180.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 180.0)">USES</text>
+<path d="M 414.0 155.0 C 459.0 155.0, 459.0 155.0, 502.0 155.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="459.0" y="152.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 152.0)">CAN_WRITE</text>
+<path class="hl-edge" d="M 174.0 211.0 C 219.0 211.0, 219.0 211.0, 262.0 211.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="219.0" y="208.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 208.0)">USES</text>
+<path d="M 174.0 211.0 C 219.0 211.0, 219.0 267.0, 262.0 267.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="236.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 236.0)">AUTHENTICATES_AS</text>
+<path d="M 174.0 211.0 C 219.0 211.0, 219.0 323.0, 262.0 323.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="264.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 264.0)">USES</text>
+<path class="hl-edge" d="M 414.0 211.0 C 459.0 211.0, 459.0 211.0, 502.0 211.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="459.0" y="208.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 208.0)">CAN_WRITE</text>
+<path d="M 414.0 211.0 C 459.0 211.0, 459.0 267.0, 502.0 267.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="459.0" y="236.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 236.0)">CAN_WRITE</text>
+<path class="hl-edge" d="M 654.0 211.0 C 699.0 211.0, 699.0 99.0, 742.0 99.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="699.0" y="152.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 699.0 152.0)">TRIGGERS</text>
+<path d="M 654.0 267.0 C 699.0 267.0, 699.0 99.0, 742.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="699.0" y="180.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 699.0 180.0)">TRIGGERS</text>
+<path class="hl-edge" d="M 894.0 99.0 C 939.0 99.0, 939.0 99.0, 982.0 99.0" fill="none" stroke="#58a6ff" stroke-width="3" marker-end="url(#arrow-hl)"/>
+<text x="939.0" y="96.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 939.0 96.0)">CONTAINS_SECRET</text>
+<path d="M 894.0 99.0 C 939.0 99.0, 939.0 155.0, 982.0 155.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="939.0" y="124.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 939.0 124.0)">AUTHENTICATES_AS</text>
+<path d="M 1854.0 155.0 C 1899.0 155.0, 1899.0 99.0, 1942.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="1899.0" y="124.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 1899.0 124.0)">AUTHENTICATES_AS</text>
+<path d="M 414.0 267.0 C 459.0 267.0, 459.0 323.0, 502.0 323.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="459.0" y="292.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 292.0)">CAN_READ</text>
+<path d="M 414.0 323.0 C 459.0 323.0, 459.0 99.0, 502.0 99.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="459.0" y="208.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 459.0 208.0)">CAN_WRITE</text>
+<path d="M 174.0 267.0 C 219.0 267.0, 219.0 211.0, 262.0 211.0" fill="none" stroke="#6e7681" stroke-width="1.4" marker-end="url(#arrow)"/>
+<text x="219.0" y="236.0" fill="#8b949e" font-size="8" text-anchor="middle" transform="rotate(-90 219.0 236.0)">USES</text>
+<g><rect x="24.0" y="80.0" width="150" height="38" rx="6" fill="#f778ba" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>calendar-assistant (AI_AGENT)</title><text x="99.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Calendar Assistant</text></g>
+<g><rect x="24.0" y="136.0" width="150" height="38" rx="6" fill="#f778ba" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>developer-agent (AI_AGENT)</title><text x="99.0" y="159.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Developer Agent</text></g>
+<g class="hl-node" style="animation-delay:600ms"><rect x="24.0" y="192.0" width="150" height="38" rx="6" fill="#f778ba" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>finance-agent (AI_AGENT)</title><text x="99.0" y="215.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Finance Agent</text></g>
+<g><rect x="24.0" y="248.0" width="150" height="38" rx="6" fill="#f778ba" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>support-agent (AI_AGENT)</title><text x="99.0" y="271.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">Customer Support Agent</text></g>
+<g><rect x="264.0" y="80.0" width="150" height="38" rx="6" fill="#79c0ff" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>calendar-api (API)</title><text x="339.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Calendar API</text></g>
+<g><rect x="264.0" y="136.0" width="150" height="38" rx="6" fill="#bc8cff" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>filesystem-mcp (MCP_SERVER)</title><text x="339.0" y="159.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Filesystem MCP</text></g>
+<g class="hl-node" style="animation-delay:900ms"><rect x="264.0" y="192.0" width="150" height="38" rx="6" fill="#bc8cff" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>github-mcp (MCP_SERVER)</title><text x="339.0" y="215.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">GitHub MCP</text></g>
+<g><rect x="264.0" y="248.0" width="150" height="38" rx="6" fill="#58a6ff" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>service-account-17 (IDENTITY)</title><text x="339.0" y="271.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">Finance Service Account</text></g>
+<g><rect x="264.0" y="304.0" width="150" height="38" rx="6" fill="#bc8cff" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>slack-mcp (MCP_SERVER)</title><text x="339.0" y="327.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Slack MCP</text></g>
+<g><rect x="504.0" y="80.0" width="150" height="38" rx="6" fill="#e3b341" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>calendar-events (DATASET)</title><text x="579.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Calendar Events</text></g>
+<g><rect x="504.0" y="136.0" width="150" height="38" rx="6" fill="#8b949e" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>developer-workstation (HOST)</title><text x="579.0" y="159.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">Developer Workstation</text></g>
+<g class="hl-node" style="animation-delay:1200ms"><rect x="504.0" y="192.0" width="150" height="38" rx="6" fill="#3fb950" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>internal-tools (REPOSITORY)</title><text x="579.0" y="215.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">Internal Tools Repository</text></g>
+<g><rect x="504.0" y="248.0" width="150" height="38" rx="6" fill="#3fb950" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>payments-repository (REPOSITORY)</title><text x="579.0" y="271.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Payments Repository</text></g>
+<g><rect x="504.0" y="304.0" width="150" height="38" rx="6" fill="#e3b341" fill-opacity="0.18" stroke="#e3b341" stroke-width="2.5"/><title>payroll-data (DATASET)</title><text x="579.0" y="327.0" fill="#e3b341" font-size="11" font-weight="600" text-anchor="middle">Payroll Dataset</text></g>
+<g class="hl-node" style="animation-delay:1500ms"><rect x="744.0" y="80.0" width="150" height="38" rx="6" fill="#d29922" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>production-ci (CI_PIPELINE)</title><text x="819.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Production CI</text></g>
+<g class="hl-node" style="animation-delay:1800ms"><rect x="984.0" y="80.0" width="150" height="38" rx="6" fill="#ff7b72" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>aws-deploy-token (SECRET)</title><text x="1059.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">AWS Deploy Token</text></g>
+<g><rect x="984.0" y="136.0" width="150" height="38" rx="6" fill="#58a6ff" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>deploy-bot (IDENTITY)</title><text x="1059.0" y="159.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">CI Deploy Bot</text></g>
+<g class="hl-node" style="animation-delay:600ms"><rect x="1224.0" y="80.0" width="150" height="38" rx="6" fill="#ffa657" fill-opacity="0.18" stroke="#58a6ff" stroke-width="2.5"/><title>aws-deploy-role (CLOUD_ROLE)</title><text x="1299.0" y="103.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">AWS Production Deploy Role</text></g>
+<g><rect x="1464.0" y="80.0" width="150" height="38" rx="6" fill="#f0883e" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>aws-secrets-manager (CLOUD_RESOURCE)</title><text x="1539.0" y="103.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">AWS Secrets Manager</text></g>
+<g class="hl-node" style="animation-delay:300ms"><rect x="1464.0" y="136.0" width="150" height="38" rx="6" fill="#f85149" fill-opacity="0.18" stroke="#e3b341" stroke-width="2.5"/><title>customer-database (DATABASE)</title><text x="1539.0" y="159.0" fill="#e3b341" font-size="11" font-weight="600" text-anchor="middle">Customer Database</text></g>
+<g><rect x="1464.0" y="192.0" width="150" height="38" rx="6" fill="#f0883e" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>production-s3 (CLOUD_RESOURCE)</title><text x="1539.0" y="215.0" fill="#c9d1d9" font-size="11" font-weight="600" text-anchor="middle">Production S3 Bucket</text></g>
+<g><rect x="1704.0" y="80.0" width="150" height="38" rx="6" fill="#ff7b72" fill-opacity="0.18" stroke="#e3b341" stroke-width="2.5"/><title>payment-signing-key (SECRET)</title><text x="1779.0" y="103.0" fill="#e3b341" font-size="11" font-weight="600" text-anchor="middle">Payment Signing Key</text></g>
+<g><rect x="1704.0" y="136.0" width="150" height="38" rx="6" fill="#ff7b72" fill-opacity="0.18" stroke="#30363d" stroke-width="1"/><title>production-db-secret (SECRET)</title><text x="1779.0" y="159.0" fill="#c9d1d9" font-size="9" font-weight="600" text-anchor="middle">Production Database Secret</text></g>
+<g><rect x="1944.0" y="80.0" width="150" height="38" rx="6" fill="#f85149" fill-opacity="0.18" stroke="#e3b341" stroke-width="2.5"/><title>production-database (DATABASE)</title><text x="2019.0" y="103.0" fill="#e3b341" font-size="11" font-weight="600" text-anchor="middle">Production Database</text></g>
+<g font-size="10" fill="#8b949e"><rect x="24" y="343" width="10" height="10" rx="2" fill="#f778ba" fill-opacity="0.4" stroke="#f778ba"/><text x="40" y="352">AI_AGENT</text><rect x="112" y="343" width="10" height="10" rx="2" fill="#bc8cff" fill-opacity="0.4" stroke="#bc8cff"/><text x="128" y="352">MCP_SERVER</text><rect x="212" y="343" width="10" height="10" rx="2" fill="#ff7b72" fill-opacity="0.4" stroke="#ff7b72"/><text x="228" y="352">SECRET</text><rect x="288" y="343" width="10" height="10" rx="2" fill="#ffa657" fill-opacity="0.4" stroke="#ffa657"/><text x="304" y="352">CLOUD_ROLE</text><rect x="388" y="343" width="10" height="10" rx="2" fill="#f85149" fill-opacity="0.4" stroke="#f85149"/><text x="404" y="352">DATABASE</text><rect x="476" y="343" width="10" height="10" rx="2" fill="none" stroke="#e3b341" stroke-width="2"/><text x="492" y="352">CROWN JEWEL</text></g>
+</svg>

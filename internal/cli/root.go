@@ -51,6 +51,7 @@ could reach if an agent is compromised.`,
 		newDiffCommand(),
 		newMincutCommand(),
 		newPolicyCommand(),
+		newWatchCommand(),
 		newServeCommand(),
 		newDemoCommand(),
 	)

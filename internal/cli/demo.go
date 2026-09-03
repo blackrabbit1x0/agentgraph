@@ -12,6 +12,9 @@ import (
 //go:embed demo/agentgraph-demo.yaml
 var demoConfig []byte
 
+//go:embed demo/events.jsonl
+var demoEvents []byte
+
 func newDemoCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "demo",
@@ -35,6 +38,7 @@ repositories which trigger production CI.`,
 			fmt.Println("  agentgraph demo paths --from finance-agent")
 			fmt.Println("  agentgraph demo blast-radius finance-agent")
 			fmt.Println("  agentgraph demo explain <path-id>")
+			fmt.Println("  agentgraph demo watch    # simulated attack in progress")
 		},
 	}
 
@@ -49,12 +53,15 @@ repositories which trigger production CI.`,
 		demoSub("mincut", newMincutCommand()),
 		demoSub("policy", newPolicyCommand()),
 		demoSub("export", newExportCommand()),
+		demoSub("watch", newWatchCommand()),
+		demoSub("serve", newServeCommand()),
 	)
 	return cmd
 }
 
 // demoSub clones a command so it can run against the embedded demo
-// configuration regardless of the --config flag.
+// configuration regardless of the --config flag. The watch subcommand is
+// additionally pointed at the embedded demo event stream.
 func demoSub(use string, cmd *cobra.Command) *cobra.Command {
 	cmd.Use = use
 	cmd.RunE = func(c *cobra.Command, args []string) error {
@@ -69,6 +76,19 @@ func demoSub(use string, cmd *cobra.Command) *cobra.Command {
 			return err
 		}
 		cfgFile = path
+
+		// demo watch: default --events to the embedded event stream.
+		if c.Name() == "watch" && c.Flags().Lookup("events") != nil &&
+			!c.Flags().Lookup("events").Changed {
+			eventsPath := dir + "/events.jsonl"
+			if err := os.WriteFile(eventsPath, demoEvents, 0644); err != nil {
+				return err
+			}
+			if err := c.Flags().Set("events", eventsPath); err != nil {
+				return err
+			}
+		}
+
 		c.Run(c, args)
 		return nil
 	}

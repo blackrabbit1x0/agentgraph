@@ -24,6 +24,7 @@ go.work.sum
 
 # Private PRD (kept local, never published)
 /AgentGraph.md
+/LAUNCH.md
 
 # IDE
 .idea/

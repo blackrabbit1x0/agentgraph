@@ -30,6 +30,8 @@ still create a path to production.
 
 Think BloodHound — but for AI agents.
 
+![AgentGraph attack path](docs/demo-graph.svg)
+
 ## Why
 
 AI agents are increasingly granted access to email, GitHub, Slack, cloud
@@ -80,6 +82,23 @@ Then explore:
 ./agentgraph demo explain PATH-0001
 ./agentgraph demo remediate finance-agent
 ./agentgraph demo chokepoints
+./agentgraph demo watch       # simulated attack in progress
+```
+
+`demo watch` streams simulated agent telemetry through the runtime
+detection engine:
+
+```text
+RUNTIME DETECTION
+Events processed: 5
+
+[HIGH] !! ATTACK PATH EXECUTION
+  Path:     PATH-0053 (finance-agent -> customer-database)
+  Stages:   3/6 observed
+  Next:     aws-deploy-token
+  Risk:     97/100 (CRITICAL)
+
+Summary: 20 alerts - 3 complete, 4 critical, 13 high - across 15 attack paths
 ```
 
 ## Live discovery: GitHub and AWS connectors
@@ -123,10 +142,21 @@ names are recorded but values never stored; URLs are redacted of
 sensitive query parameters. With `--live`, HTTP/SSE servers are queried
 via the MCP protocol (initialize → tools/list) — **no tool is ever called**.
 
+**Kubernetes** (read-only API discovery):
+
+```bash
+./agentgraph scan kubernetes --save graph.json
+```
+
+Discovers pods and their service accounts, RBAC roles and bindings
+(with verb-derived privilege levels — `escalate`/`bind`/`*` → admin),
+and secret metadata. Access resolves from `--server`/`--token` flags, a
+kubeconfig, or the in-cluster service account environment.
+
 **Combine everything:**
 
 ```bash
-./agentgraph scan github aws mcp --save graph.json
+./agentgraph scan github aws mcp kubernetes --save graph.json
 ```
 
 Then analyze or serve the saved graph:
@@ -207,6 +237,72 @@ Standalone SVG image of the graph: agents on the left, targets on the
 right, crown jewels in gold, admin/execute edges in red, and (with
 `--from`) the agent's most dangerous path highlighted in blue. Drop it
 straight into a README, report, or slide deck.
+
+## Runtime detection: EDR for AI agents (research preview)
+
+Attack paths describe what *could* happen. Runtime detection watches what
+agents *actually do*, and alerts when observed behavior advances in order
+along a known dangerous path (PRD section 68):
+
+```bash
+./agentgraph watch --events agent-events.jsonl
+```
+
+Event format (one JSON object per line — from an MCP gateway log, audit
+log, or agent telemetry):
+
+```json
+{"timestamp":"2026-09-03T10:02:14Z","agent":"finance-agent",
+ "action":"tool_call","tool":"github-mcp","target":"payments-repository"}
+```
+
+Alert levels: **HIGH** (≥50% of path stages observed), **CRITICAL**
+(within one stage of the target), **COMPLETE** (target reached).
+Out-of-order events never advance a path; every alert names the path,
+the next hop, and the path's risk score.
+
+## MITRE ATT&CK and agent-attack taxonomy
+
+Every path maps to the frameworks security teams already use:
+
+```bash
+./agentgraph explain PATH-0047
+```
+
+```text
+MITRE ATT&CK techniques:
+  T1072      Software Deployment Tools
+  T1078      Valid Accounts
+  T1548      Abuse Elevation Control Mechanism
+  T1552      Unsecured Credentials
+  T1195.002  Compromise Software Supply Chain
+
+Agent attack techniques:
+  AGT-004    Agent Credential Exposure
+  AGT-006    MCP Trust Exploitation
+  AGT-008    Agent Identity Escalation
+  AGT-009    Agent-to-Cloud Pivot
+  AGT-010    Agent-to-CI/CD Pivot
+```
+
+ATT&CK tags and AGT classifications are included in JSON export. Not
+every relationship is forced into ATT&CK — only meaningful mappings.
+
+## Install
+
+Prebuilt binaries: [releases](https://github.com/blackrabbit1x0/agentgraph/releases)
+for Linux, macOS, and Windows.
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/blackrabbit1x0/agentgraph/main/install.sh | sh
+
+# Docker (demo environment on http://localhost:8080)
+docker compose up
+
+# From source
+go build -o agentgraph ./cmd/agentgraph
+```
 
 ## Web dashboard
 
@@ -305,7 +401,8 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 |---|---|
 | `agentgraph init` | Create a starter `agentgraph.yaml` |
 | `agentgraph scan` | Load config and print the security dashboard |
-| `agentgraph scan [github\|aws\|mcp]` | Load config and/or run connectors |
+| `agentgraph scan [github\|aws\|mcp\|kubernetes]` | Load config and/or run connectors |
+| `agentgraph watch --events f.jsonl` | Detect attack-path execution in an event stream |
 | `agentgraph serve` | Web dashboard + REST API |
 | `agentgraph diff <a> <b>` | Compare snapshots: new/removed attack paths |
 | `agentgraph mincut --agent A [--to B\|--all]` | Minimum relationship cut |
@@ -323,7 +420,7 @@ Crown Jewels at Risk       customer-database, payment-signing-key, ...
 ## How it works
 
 ```text
-Connectors (YAML static, GitHub, AWS, MCP)
+Connectors (YAML static, GitHub, AWS, MCP, Kubernetes)
         │
         ▼
 Normalization (nodes + edges, secret redaction, assembler merge)
@@ -340,6 +437,8 @@ Graph Store (in-memory; snapshots via --save/--graph)
         │                    minimum cut (Edmonds-Karp)
         ├── Policy Engine    default + custom YAML rules with evidence
         ├── Diff Engine      snapshot comparison with path attribution
+        ├── Runtime Engine   attack-path execution detection from events
+        ├── Attack Mapping   MITRE ATT&CK + agent-attack taxonomy (AGT)
         └── API / Web        REST endpoints, Cytoscape.js dashboard, SVG export
 ```
 
@@ -397,9 +496,11 @@ internal/blast/            blast-radius + agent exposure analysis
 internal/remediation/      remediation optimizer, choke points, min-cut
 internal/policy/           default + custom policy rules
 internal/diff/             snapshot comparison + path attribution
-internal/svg/              standalone SVG graph rendering
+internal/runtime/          attack-path execution detection (events -> alerts)
+internal/attack/           MITRE ATT&CK + agent-attack taxonomy mapping
+internal/svg/              static + animated SVG graph rendering
 internal/config/           YAML static connector (secret redaction)
-internal/connectors/       GitHub + AWS + MCP live discovery connectors
+internal/connectors/       GitHub, AWS, MCP, Kubernetes discovery
 internal/api/              REST API + embedded web dashboard
 internal/cli/              CLI commands + embedded demo environment
 ```
@@ -414,7 +515,11 @@ internal/cli/              CLI commands + embedded demo environment
   Manager, S3, RDS, Lambda)
 - **Phase 3 — Remediation** ✅ (minimum-cut analysis, policy engine)
 - **Phase 4 — Historical graph** ✅ (snapshot diff with path attribution)
-- **Phase 5** — Entra ID, Kubernetes, GitLab, Slack, Active Directory
+- **Phase 5 — Enterprise identity** 🚧 (Kubernetes ✅; Entra ID, GitLab,
+  Slack, Active Directory next)
+- **Research — EDR for AI agents** 🚧 (runtime attack-path execution
+  detection: `agentgraph watch`; next: probabilistic paths, behavior
+  graphs)
 
 ## Contributing
 

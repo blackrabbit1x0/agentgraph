@@ -53,14 +53,29 @@ func edgeKey(e *graph.Edge) string {
 	return fmt.Sprintf("%s|%s|%s", e.Source, e.Type, e.Target)
 }
 
-// Render produces a complete SVG document.
+// Render produces a complete SVG document. When animate is true, the
+// highlighted path animates: edges dash-flow and nodes pulse in
+// sequence, producing a shareable "attack path in motion" image
+// (animated SVGs render in GitHub READMEs).
 //
 // Layout: nodes are placed in columns by BFS hop distance from the
 // leftmost AI agents, and stacked vertically within each column. Agents
 // are on the left, critical targets on the right.
-func Render(g *graph.Graph, title string, hl *Highlight) string {
+func Render(g *graph.Graph, title string, hl *Highlight, animate bool) string {
 	if hl == nil {
 		hl = &Highlight{NodeIDs: map[string]bool{}, EdgeKeys: map[string]bool{}}
+	}
+	hlIndex := map[string]int{}
+	if animate {
+		// Order highlighted nodes for sequential animation delays.
+		i := 0
+		for _, e := range g.Edges() {
+			if hl.EdgeKeys[edgeKey(e)] {
+				hlIndex[e.Source] = i
+				hlIndex[e.Target] = i + 1
+				i++
+			}
+		}
 	}
 
 	// Column assignment: BFS depth from any agent; agents are depth 0.
@@ -158,9 +173,20 @@ func Render(g *graph.Graph, title string, hl *Highlight) string {
 <path d="M 0 0 L 10 5 L 0 10 z" fill="#f85149"/>
 </marker>
 </defs>
-<rect width="100%%" height="100%%" fill="#0d1117"/>
+`, width, height, width, height)
+	if animate {
+		b.WriteString(`<style>
+.hl-node { animation: ag-pulse 2.4s ease-in-out infinite; }
+.hl-edge { stroke-dasharray: 8 6; animation: ag-dash 1.2s linear infinite; }
+.hl-label { animation: ag-pulse 2.4s ease-in-out infinite; }
+@keyframes ag-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes ag-dash { to { stroke-dashoffset: -28; } }
+</style>
+`)
+	}
+	fmt.Fprintf(&b, `<rect width="100%%" height="100%%" fill="#0d1117"/>
 <text x="%.0f" y="34" fill="#e6edf3" font-size="18" font-weight="600">%s</text>
-`, width, height, width, height, margin, escapeXML(title))
+`, margin, escapeXML(title))
 
 	// Edges first (below nodes).
 	for _, e := range g.Edges() {
@@ -193,8 +219,12 @@ func Render(g *graph.Graph, title string, hl *Highlight) string {
 
 		// Curved path for visual clarity.
 		mx := (x1 + x2) / 2
-		fmt.Fprintf(&b, `<path d="M %.1f %.1f C %.1f %.1f, %.1f %.1f, %.1f %.1f" fill="none" stroke="%s" stroke-width="%s" marker-end="url(#%s)"/>`+"\n",
-			x1, y1, mx, y1, mx, y2, x2-2, y2, color, widthAttr, marker)
+		animClass := ""
+		if animate && hl.EdgeKeys[edgeKey(e)] {
+			animClass = ` class="hl-edge"`
+		}
+		fmt.Fprintf(&b, `<path%s d="M %.1f %.1f C %.1f %.1f, %.1f %.1f, %.1f %.1f" fill="none" stroke="%s" stroke-width="%s" marker-end="url(#%s)"/>`+"\n",
+			animClass, x1, y1, mx, y1, mx, y2, x2-2, y2, color, widthAttr, marker)
 
 		// Edge label at midpoint.
 		label := string(e.Type)
@@ -220,8 +250,12 @@ func Render(g *graph.Graph, title string, hl *Highlight) string {
 				stroke = "#e3b341"
 				strokeW = "2.5"
 			}
-			fmt.Fprintf(&b, `<g><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="6" fill="%s" fill-opacity="0.18" stroke="%s" stroke-width="%s"/>`,
-				p.x, p.y, nodeW, nodeH, color, stroke, strokeW)
+			animStyle := ""
+			if animate && hl.NodeIDs[n.ID] {
+				animStyle = fmt.Sprintf(` class="hl-node" style="animation-delay:%dms"`, hlIndex[n.ID]*300)
+			}
+			fmt.Fprintf(&b, `<g%s><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="6" fill="%s" fill-opacity="0.18" stroke="%s" stroke-width="%s"/>`,
+				animStyle, p.x, p.y, nodeW, nodeH, color, stroke, strokeW)
 
 			label := shortLabel(n)
 			fontSize := 11
